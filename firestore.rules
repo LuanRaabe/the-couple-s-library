@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Diagnostic/connectivity check doc
+    match /test/{testId} {
+      allow get: if true;
+    }
+
+    function isValidBook(data) {
+      return data.title is string &&
+        data.title.size() > 0 &&
+        data.title.size() <= 500 &&
+        data.status in ['quero_ler', 'lendo', 'lido', 'abandonado', 'pausado'] &&
+        data.assignedReader in ['ele', 'ela', 'ambos'] &&
+        (!('pageCount' in data) || (data.pageCount is number && data.pageCount >= 0 && data.pageCount <= 100000)) &&
+        (!('currentPage' in data) || (data.currentPage is number && data.currentPage >= 0 && data.currentPage <= 100000)) &&
+        (!('authors' in data) || (data.authors is string && data.authors.size() <= 500)) &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 10000)) &&
+        (!('coverUrl' in data) || (data.coverUrl is string && data.coverUrl.size() <= 2000)) &&
+        (!('isbn' in data) || (data.isbn is string && data.isbn.size() <= 100)) &&
+        (!('publisher' in data) || (data.publisher is string && data.publisher.size() <= 300)) &&
+        (!('publishedDate' in data) || (data.publishedDate is string && data.publishedDate.size() <= 100));
+    }
+
+    match /books/{bookId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(bookId) && isValidBook(incoming());
+      allow update: if isSignedIn() && isValidId(bookId) && isValidBook(incoming());
+      allow delete: if isSignedIn() && isValidId(bookId);
+    }
+
+    function isValidSettings(data) {
+      return (!('eleName' in data) || (data.eleName is string && data.eleName.size() <= 100)) &&
+        (!('elaName' in data) || (data.elaName is string && data.elaName.size() <= 100)) &&
+        (!('yearlyGoal' in data) || (data.yearlyGoal is number && data.yearlyGoal >= 0 && data.yearlyGoal <= 10000));
+    }
+
+    match /settings/{settingsId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(settingsId) && isValidSettings(incoming());
+      allow delete: if isSignedIn() && isValidId(settingsId);
+    }
+  }
+}

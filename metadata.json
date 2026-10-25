@@ -1,0 +1,6 @@
+{
+  "name": "Nossa Estante - Gestão de Livros a Dois",
+  "description": "Aplicativo de gerenciamento de livros e lista de desejos para o casal com sincronização em tempo real, Google Livros e anotações individuais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

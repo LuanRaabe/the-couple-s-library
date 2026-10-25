@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "Book": {
+      "title": "Book",
+      "description": "A book tracked in the shared couple library with metadata, reading status, ratings, individual reviews, and reading progress.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the book", "maxLength": 500 },
+        "authors": { "type": "string", "description": "Comma separated author names", "maxLength": 500 },
+        "coverUrl": { "type": "string", "description": "URL to the cover image", "maxLength": 2000 },
+        "isbn": { "type": "string", "description": "ISBN code", "maxLength": 50 },
+        "pageCount": { "type": "number", "description": "Total number of pages" },
+        "currentPage": { "type": "number", "description": "Current page read" },
+        "publisher": { "type": "string", "description": "Publisher name", "maxLength": 300 },
+        "publishedDate": { "type": "string", "description": "Publication date", "maxLength": 50 },
+        "description": { "type": "string", "description": "Synopsis or summary", "maxLength": 5000 },
+        "categories": { "type": "array", "description": "Genres or tags" },
+        "status": {
+          "type": "string",
+          "enum": ["quero_ler", "lendo", "lido", "abandonado", "pausado"],
+          "description": "Reading progress status"
+        },
+        "assignedReader": {
+          "type": "string",
+          "enum": ["ele", "ela", "ambos"],
+          "description": "Designated reader in the couple"
+        },
+        "ratings": { "type": "object", "description": "Individual ratings by 'ele' and 'ela'" },
+        "notes": { "type": "object", "description": "Individual notes and thoughts by 'ele' and 'ela'" },
+        "recommendations": { "type": "array", "description": "Reading recommendations between the couple" },
+        "readingLogs": { "type": "array", "description": "Historical log of reading sessions" },
+        "favorite": { "type": "boolean", "description": "Flag indicating if either reader marked as favorite" },
+        "dateAdded": { "type": "string", "description": "Timestamp when added", "maxLength": 100 },
+        "dateStarted": { "type": "string", "description": "Timestamp when reading started", "maxLength": 100 },
+        "dateFinished": { "type": "string", "description": "Timestamp when reading finished", "maxLength": 100 },
+        "createdBy": { "type": "string", "description": "Firebase UID of creator", "maxLength": 128 },
+        "updatedAt": { "type": "string", "description": "Timestamp of last modification", "maxLength": 100 }
+      },
+      "required": ["title", "status", "assignedReader"]
+    },
+    "LibrarySettings": {
+      "title": "LibrarySettings",
+      "description": "Shared couple library settings such as reader nicknames, reading challenge goal, and preferences.",
+      "type": "object",
+      "properties": {
+        "eleName": { "type": "string", "description": "Name of the first reader", "maxLength": 100 },
+        "elaName": { "type": "string", "description": "Name of the second reader", "maxLength": 100 },
+        "yearlyGoal": { "type": "number", "description": "Annual reading goal number of books" },
+        "updatedAt": { "type": "string", "description": "Timestamp of last update", "maxLength": 100 },
+        "updatedBy": { "type": "string", "description": "UID of updater", "maxLength": 128 }
+      },
+      "required": ["eleName", "elaName", "yearlyGoal"]
+    }
+  },
+  "firestore": {
+    "/books/{bookId}": {
+      "schema": "Book",
+      "description": "Shared bookshelf containing books read, currently reading, and wishlist."
+    },
+    "/settings/{settingsId}": {
+      "schema": "LibrarySettings",
+      "description": "Shared settings configuration for the couple's reading library."
+    }
+  }
+}
