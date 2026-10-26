@@ -7,7 +7,7 @@
       "properties": {
         "title": { "type": "string", "description": "Title of the book", "maxLength": 500 },
         "authors": { "type": "string", "description": "Comma separated author names", "maxLength": 500 },
-        "coverUrl": { "type": "string", "description": "URL to the cover image", "maxLength": 2000 },
+        "coverUrl": { "type": "string", "description": "URL to the cover image or Base64 data URL", "maxLength": 500000 },
         "isbn": { "type": "string", "description": "ISBN code", "maxLength": 50 },
         "pageCount": { "type": "number", "description": "Total number of pages" },
         "currentPage": { "type": "number", "description": "Current page read" },
@@ -29,6 +29,8 @@
         "notes": { "type": "object", "description": "Individual notes and thoughts by 'ele' and 'ela'" },
         "recommendations": { "type": "array", "description": "Reading recommendations between the couple" },
         "readingLogs": { "type": "array", "description": "Historical log of reading sessions" },
+        "readCount": { "type": "number", "description": "Total times the book was read and reread" },
+        "readPeriods": { "type": "array", "description": "Historical occasions (month and year) when read or reread" },
         "favorite": { "type": "boolean", "description": "Flag indicating if either reader marked as favorite" },
         "dateAdded": { "type": "string", "description": "Timestamp when added", "maxLength": 100 },
         "dateStarted": { "type": "string", "description": "Timestamp when reading started", "maxLength": 100 },

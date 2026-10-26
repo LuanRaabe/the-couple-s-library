@@ -78,8 +78,12 @@ export async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn('Firebase client appears offline or connecting...');
+    if (error instanceof Error && (error.message.includes('the client is offline') || error.message.includes('token-service-api'))) {
+      console.warn('Firebase client initial connectivity check note:', error.message);
     }
   }
 }
+
+// Call testConnection on initial boot per Firebase integration guidelines
+testConnection();
+

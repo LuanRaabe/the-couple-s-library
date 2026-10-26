@@ -8,16 +8,18 @@ import {
   Check, 
   Heart,
   MessageSquareHeart,
-  Eye
+  Eye,
+  RotateCcw
 } from 'lucide-react';
-import { Book, BookStatus, LibrarySettings } from '../types/book';
-import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress } from '../utils/bookHelpers';
+import { Book, BookStatus, ReaderId, LibrarySettings } from '../types/book';
+import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '../utils/bookHelpers';
 
 interface BookTableProps {
   books: Book[];
   settings: LibrarySettings;
   onSelectBook: (book: Book) => void;
   onUpdateStatus: (bookId: string, newStatus: BookStatus) => void;
+  onUpdateReader: (bookId: string, newReader: ReaderId) => void;
   onDeleteBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
 }
@@ -29,6 +31,7 @@ export const BookTable: React.FC<BookTableProps> = ({
   settings,
   onSelectBook,
   onUpdateStatus,
+  onUpdateReader,
   onDeleteBook,
   onToggleFavorite,
 }) => {
@@ -213,28 +216,44 @@ export const BookTable: React.FC<BookTableProps> = ({
                     </div>
                   </td>
 
-                  {/* Reader */}
-                  <td className="py-3 px-4">
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${readerBadge.bg} ${readerBadge.text} ${readerBadge.border}`}
-                    >
-                      {readerBadge.label}
-                    </span>
-                  </td>
-
-                  {/* Status dropdown */}
+                  {/* Editable Reader */}
                   <td className="py-3 px-4">
                     <select
-                      value={book.status}
-                      onChange={(e) => onUpdateStatus(book.id, e.target.value as BookStatus)}
-                      className={`text-xs font-medium rounded-lg px-2.5 py-1 border transition-colors cursor-pointer bg-white dark:bg-stone-900 ${statusColor.text} ${statusColor.border}`}
+                      value={book.assignedReader}
+                      onChange={(e) => onUpdateReader(book.id, e.target.value as ReaderId)}
+                      className={`text-xs font-semibold rounded-lg px-2.5 py-1 border transition-colors cursor-pointer bg-white dark:bg-stone-900 ${readerBadge.text} ${readerBadge.border}`}
+                      title={`Alterar leitor responsável por este livro`}
                     >
-                      <option value="quero_ler">Quero Ler</option>
-                      <option value="lendo">Lendo</option>
-                      <option value="lido">Lido</option>
-                      <option value="pausado">Pausado</option>
-                      <option value="abandonado">Abandonado</option>
+                      <option value="ele">{settings.eleName}</option>
+                      <option value="ela">{settings.elaName}</option>
+                      <option value="ambos">Ambos (Casal)</option>
                     </select>
+                  </td>
+
+                  {/* Status dropdown & Re-reading badge */}
+                  <td className="py-3 px-4">
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={book.status}
+                        onChange={(e) => onUpdateStatus(book.id, e.target.value as BookStatus)}
+                        className={`text-xs font-medium rounded-lg px-2.5 py-1 border transition-colors cursor-pointer bg-white dark:bg-stone-900 ${statusColor.text} ${statusColor.border}`}
+                      >
+                        <option value="quero_ler">Quero Ler</option>
+                        <option value="lendo">Lendo</option>
+                        <option value="lido">Lido</option>
+                        <option value="pausado">Pausado</option>
+                        <option value="abandonado">Abandonado</option>
+                      </select>
+                      {calculateReadCount(book) > 1 && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 border border-purple-200 dark:border-purple-800 shrink-0"
+                          title={`Lido e relido ${calculateReadCount(book)} vezes`}
+                        >
+                          <RotateCcw className="w-2.5 h-2.5" />
+                          <span>{calculateReadCount(book)}x</span>
+                        </span>
+                      )}
+                    </div>
                   </td>
 
                   {/* Progress */}

@@ -37,10 +37,12 @@ service cloud.firestore {
         (!('currentPage' in data) || (data.currentPage is number && data.currentPage >= 0 && data.currentPage <= 100000)) &&
         (!('authors' in data) || (data.authors is string && data.authors.size() <= 500)) &&
         (!('description' in data) || (data.description is string && data.description.size() <= 10000)) &&
-        (!('coverUrl' in data) || (data.coverUrl is string && data.coverUrl.size() <= 2000)) &&
+        (!('coverUrl' in data) || (data.coverUrl is string && data.coverUrl.size() <= 500000)) &&
         (!('isbn' in data) || (data.isbn is string && data.isbn.size() <= 100)) &&
         (!('publisher' in data) || (data.publisher is string && data.publisher.size() <= 300)) &&
-        (!('publishedDate' in data) || (data.publishedDate is string && data.publishedDate.size() <= 100));
+        (!('publishedDate' in data) || (data.publishedDate is string && data.publishedDate.size() <= 100)) &&
+        (!('readCount' in data) || (data.readCount is number && data.readCount >= 0 && data.readCount <= 10000)) &&
+        (!('readPeriods' in data) || (data.readPeriods is list && data.readPeriods.size() <= 200));
     }
 
     match /books/{bookId} {

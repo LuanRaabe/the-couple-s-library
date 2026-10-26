@@ -20,6 +20,14 @@ export interface BookRecommendation {
   readStatus?: 'pendente' | 'lendo' | 'lido';
 }
 
+export interface ReadPeriod {
+  id: string;
+  year: number;
+  month: number; // 1 - 12
+  reader?: 'ele' | 'ela' | 'ambos';
+  notes?: string;
+}
+
 export interface Book {
   id: string;
   originalId?: number;
@@ -35,6 +43,8 @@ export interface Book {
   categories?: string[];
   status: BookStatus;
   assignedReader: ReaderId;
+  readCount?: number;
+  readPeriods?: ReadPeriod[];
   ratings?: {
     ele?: number; // 0-5
     ela?: number; // 0-5

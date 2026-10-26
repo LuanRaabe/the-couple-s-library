@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   Star, 
@@ -15,12 +15,15 @@ import {
   Edit2,
   Bookmark,
   RefreshCw,
-  Upload
+  Upload,
+  Sparkles,
+  RotateCcw
 } from 'lucide-react';
-import { Book, BookStatus, ReaderId, LibrarySettings, ReadingLog, BookRecommendation } from '../types/book';
-import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress } from '../utils/bookHelpers';
+import { Book, BookStatus, ReaderId, LibrarySettings, ReadingLog, BookRecommendation, ReadPeriod } from '../types/book';
+import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, MONTH_NAMES, formatReadPeriod, calculateReadCount } from '../utils/bookHelpers';
 import { fetchCoverForBook } from '../services/googleBooks';
 import { compressImageFile } from '../utils/imageCompressor';
+import { CoverPickerModal } from './CoverPickerModal';
 
 
 interface BookDetailModalProps {
@@ -60,15 +63,23 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
   // Recommendation draft state
   const [recMessage, setRecMessage] = useState<string>('');
 
+  // Re-readings / Read history draft state
+  const [readMonth, setReadMonth] = useState<number>(() => new Date().getMonth() + 1);
+  const [readYear, setReadYear] = useState<number>(() => new Date().getFullYear());
+  const [readReader, setReadReader] = useState<ReaderId>(activeReader);
+  const [readNote, setReadNote] = useState<string>('');
+  const [showAddPeriodForm, setShowAddPeriodForm] = useState<boolean>(false);
+
   const [isSaving, setIsSaving] = useState(false);
   const [isFetchingCover, setIsFetchingCover] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [isCoverPickerOpen, setIsCoverPickerOpen] = useState(false);
   const detailCoverInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleRefreshCover = async () => {
     setIsFetchingCover(true);
     try {
-      const newCover = await fetchCoverForBook(book.title, book.authors);
+      const newCover = await fetchCoverForBook(book.title, book.authors, book.isbn);
       if (newCover) {
         await onUpdateBook({
           ...book,
@@ -252,9 +263,81 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
     }
   };
 
+  const handleAddReadPeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!readMonth || !readYear) return;
+
+    setIsSaving(true);
+    try {
+      const newPeriod: ReadPeriod = {
+        id: `read_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        year: Number(readYear),
+        month: Number(readMonth),
+        reader: readReader,
+        notes: readNote.trim() || undefined,
+      };
+
+      const existingPeriods = book.readPeriods || [];
+      const updatedPeriods = [...existingPeriods, newPeriod].sort((a, b) => {
+        if (b.year !== a.year) return b.year - a.year;
+        return b.month - a.month;
+      });
+
+      const updated: Book = {
+        ...book,
+        readPeriods: updatedPeriods,
+        readCount: updatedPeriods.length,
+        status: book.status === 'quero_ler' ? 'lido' : book.status,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await onUpdateBook(updated);
+      setReadNote('');
+      setShowAddPeriodForm(false);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteReadPeriod = async (periodId: string) => {
+    setIsSaving(true);
+    try {
+      const updatedPeriods = (book.readPeriods || []).filter((p) => p.id !== periodId);
+      const updated: Book = {
+        ...book,
+        readPeriods: updatedPeriods,
+        readCount: updatedPeriods.length > 0 ? updatedPeriods.length : (book.status === 'lido' ? 1 : 0),
+        updatedAt: new Date().toISOString(),
+      };
+      await onUpdateBook(updated);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-stone-900 rounded-3xl w-full max-w-3xl max-h-[92vh] shadow-2xl border border-stone-200 dark:border-stone-800 flex flex-col overflow-hidden">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-stone-900 rounded-3xl w-full max-w-3xl max-h-[92vh] shadow-2xl border border-stone-200 dark:border-stone-800 flex flex-col overflow-hidden"
+      >
         
         {/* Top Header */}
         <div className="p-4 sm:p-6 border-b border-stone-100 dark:border-stone-800 flex items-start justify-between gap-4 bg-amber-50/40 dark:bg-stone-900">
@@ -289,28 +372,40 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 className="hidden"
               />
 
-              <div className="flex flex-col gap-1 w-full text-center">
+              <div className="flex flex-col gap-1.5 w-full text-center">
                 <button
                   type="button"
-                  onClick={() => detailCoverInputRef.current?.click()}
-                  disabled={isUploadingCover}
-                  className="text-[10px] text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 bg-amber-50 dark:bg-stone-800/80 px-2 py-0.5 rounded-md flex items-center justify-center gap-1 transition-colors font-medium border border-amber-200/60 dark:border-amber-900/40"
-                  title="Enviar imagem ou foto salva no computador/celular"
+                  onClick={() => setIsCoverPickerOpen(true)}
+                  className="text-[10px] text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 bg-amber-50 dark:bg-amber-950/30 px-2 py-1 rounded-md flex items-center justify-center gap-1 transition-colors font-medium border border-amber-300/60 dark:border-amber-800/60 shadow-xs"
+                  title="Pesquisar e escolher entre capas de Open Library, Google Livros, Brasil API e Gutenberg"
                 >
-                  <Upload className={`w-3 h-3 ${isUploadingCover ? 'animate-bounce' : ''}`} />
-                  <span>{isUploadingCover ? 'Enviando...' : 'Enviar Foto'}</span>
+                  <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                  <span>Escolher Capa (APIs)</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleRefreshCover}
-                  disabled={isFetchingCover}
-                  className="text-[10px] text-stone-500 hover:text-amber-600 dark:text-stone-400 dark:hover:text-amber-400 flex items-center justify-center gap-1 transition-colors"
-                  title="Buscar capa oficial em Google Livros ou Open Library"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isFetchingCover ? 'animate-spin text-amber-600' : ''}`} />
-                  <span>{isFetchingCover ? 'Buscando...' : 'Buscar Capa'}</span>
-                </button>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => detailCoverInputRef.current?.click()}
+                    disabled={isUploadingCover}
+                    className="text-[10px] text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 bg-stone-50 dark:bg-stone-800/50 px-1.5 py-0.5 rounded-md flex items-center justify-center gap-1 transition-colors font-medium border border-stone-200 dark:border-stone-700/60"
+                    title="Enviar foto salva do seu computador ou celular"
+                  >
+                    <Upload className={`w-2.5 h-2.5 ${isUploadingCover ? 'animate-bounce' : ''}`} />
+                    <span>{isUploadingCover ? '...' : 'Foto'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleRefreshCover}
+                    disabled={isFetchingCover}
+                    className="text-[10px] text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 bg-stone-50 dark:bg-stone-800/50 px-1.5 py-0.5 rounded-md flex items-center justify-center gap-1 transition-colors font-medium border border-stone-200 dark:border-stone-700/60"
+                    title="Buscar capa rápida automática"
+                  >
+                    <RefreshCw className={`w-2.5 h-2.5 ${isFetchingCover ? 'animate-spin text-amber-600' : ''}`} />
+                    <span>{isFetchingCover ? '...' : 'Auto'}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -323,6 +418,16 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${statusColor.bg} ${statusColor.text} ${statusColor.border}`}>
                   {STATUS_LABELS[book.status]}
                 </span>
+                {calculateReadCount(book) > 0 && (
+                  <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    calculateReadCount(book) > 1
+                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+                      : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                  }`}>
+                    <RotateCcw className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400" />
+                    <span>{calculateReadCount(book) === 1 ? 'Lido 1x' : `Lido ${calculateReadCount(book)}x (Releitura)`}</span>
+                  </span>
+                )}
                 {book.favorite && (
                   <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
                     <Star className="w-3 h-3 fill-amber-400 text-amber-500" />
@@ -379,59 +484,77 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
           </button>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-stone-200 dark:border-stone-800 px-4 sm:px-6 bg-stone-50/50 dark:bg-stone-900 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('reviews')}
-            className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'reviews'
-                ? 'border-amber-600 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
-            }`}
-          >
-            <Star className="w-4 h-4 fill-amber-400 text-amber-500" />
-            Notas & Avaliações ({settings.eleName} & {settings.elaName})
-          </button>
+        {/* Navigation Tabs - Modern Segmented Control with zero horizontal scroll */}
+        <div className="px-4 sm:px-6 pt-3 pb-2 border-b border-stone-200/60 dark:border-stone-800 bg-stone-50/70 dark:bg-stone-900/60">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 bg-stone-200/70 dark:bg-stone-800 rounded-2xl border border-stone-300/60 dark:border-stone-700 shadow-inner">
+            <button
+              type="button"
+              onClick={() => setActiveTab('reviews')}
+              className={`py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'reviews'
+                  ? 'bg-white dark:bg-stone-900 text-amber-700 dark:text-amber-300 shadow-xs'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-white/40'
+              }`}
+            >
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500 shrink-0" />
+              <span className="truncate">Notas & Avaliações</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('progress')}
-            className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'progress'
-                ? 'border-amber-600 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            Progresso & Sessões ({progress}%)
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('progress')}
+              className={`py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'progress'
+                  ? 'bg-white dark:bg-stone-900 text-amber-700 dark:text-amber-300 shadow-xs'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-white/40'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="truncate">Progresso</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold shrink-0 ${
+                activeTab === 'progress'
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  : 'bg-stone-300/80 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+              }`}>
+                {progress}%
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('recommendations')}
-            className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'recommendations'
-                ? 'border-rose-600 text-rose-600 dark:text-rose-400'
-                : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
-            }`}
-          >
-            <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
-            Recomendações ({book.recommendations?.length || 0})
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('recommendations')}
+              className={`py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'recommendations'
+                  ? 'bg-white dark:bg-stone-900 text-rose-600 dark:text-rose-400 shadow-xs'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-white/40'
+              }`}
+            >
+              <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500 shrink-0" />
+              <span className="truncate">Recomendações</span>
+              {(book.recommendations?.length || 0) > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold shrink-0 ${
+                  activeTab === 'recommendations'
+                    ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
+                    : 'bg-stone-300/80 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+                }`}>
+                  {book.recommendations?.length}
+                </span>
+              )}
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab('info')}
-            className={`py-3 px-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-              activeTab === 'info'
-                ? 'border-amber-600 text-amber-600 dark:text-amber-400'
-                : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
-            }`}
-          >
-            <BookOpen className="w-4 h-4" />
-            Sinopse & Detalhes
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('info')}
+              className={`py-2 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                activeTab === 'info'
+                  ? 'bg-white dark:bg-stone-900 text-amber-700 dark:text-amber-300 shadow-xs'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-white/40'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="truncate">Sinopse & Detalhes</span>
+            </button>
+          </div>
         </div>
 
         {/* Tab Content Area */}
@@ -613,6 +736,185 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     >
                       Concluir Livro ✓
                     </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Histórico de Leituras & Releituras (Mês + Ano) */}
+              <div className="bg-purple-50/40 dark:bg-stone-800/40 p-5 rounded-2xl border border-purple-200/60 dark:border-purple-900/40 space-y-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0">
+                      <RotateCcw className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-serif font-bold text-xs sm:text-sm text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                        <span>Histórico de Leituras & Releituras</span>
+                        <span className="text-[10px] font-bold px-2 py-0.2 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300">
+                          {calculateReadCount(book)}x
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                        {calculateReadCount(book) === 0
+                          ? 'Nenhuma leitura completa registrada'
+                          : calculateReadCount(book) === 1
+                          ? 'Lido 1 vez pelo casal'
+                          : `Lido ${calculateReadCount(book)} vezes (incluindo releituras)`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPeriodForm(!showAddPeriodForm)}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors shadow-xs shrink-0 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{showAddPeriodForm ? 'Fechar' : 'Nova Leitura'}</span>
+                  </button>
+                </div>
+
+                {/* Form to add a new reading occasion (Month + Year) */}
+                {showAddPeriodForm && (
+                  <form onSubmit={handleAddReadPeriod} className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-purple-200 dark:border-purple-800/60 space-y-3 animate-in fade-in duration-150">
+                    <span className="text-xs font-semibold text-stone-800 dark:text-stone-200 block">
+                      Registrar quando o livro foi lido ou relido:
+                    </span>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1">
+                          Mês
+                        </label>
+                        <select
+                          value={readMonth}
+                          onChange={(e) => setReadMonth(Number(e.target.value))}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 font-medium cursor-pointer"
+                        >
+                          {MONTH_NAMES.map((name, index) => (
+                            <option key={index + 1} value={index + 1}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1">
+                          Ano
+                        </label>
+                        <input
+                          type="number"
+                          min="1980"
+                          max="2035"
+                          value={readYear}
+                          onChange={(e) => setReadYear(Number(e.target.value))}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 font-bold text-center"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1">
+                          Quem Leu?
+                        </label>
+                        <select
+                          value={readReader}
+                          onChange={(e) => setReadReader(e.target.value as ReaderId)}
+                          className="w-full px-2.5 py-1.5 text-xs rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 font-medium cursor-pointer"
+                        >
+                          <option value="ele">{settings.eleName}</option>
+                          <option value="ela">{settings.elaName}</option>
+                          <option value="ambos">Ambos</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1">
+                        Anotação da Releitura (Opcional)
+                      </label>
+                      <input
+                        type="text"
+                        value={readNote}
+                        onChange={(e) => setReadNote(e.target.value)}
+                        placeholder="Ex: Primeira leitura de 2024 / Releitura em viagem / Livro do mês..."
+                        className="w-full px-3 py-1.5 text-xs rounded-xl border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100"
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddPeriodForm(false)}
+                        className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-700 dark:hover:text-stone-300 rounded-lg cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer"
+                      >
+                        Salvar Leitura
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* List of registered reading periods */}
+                <div className="space-y-2">
+                  {(!book.readPeriods || book.readPeriods.length === 0) ? (
+                    <div className="text-center py-4 px-3 bg-white/60 dark:bg-stone-900/60 rounded-xl border border-purple-100 dark:border-purple-950/40">
+                      <p className="text-xs text-stone-500 dark:text-stone-400">
+                        Nenhuma data de leitura ou releitura cadastrada ainda.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddPeriodForm(true)}
+                        className="text-xs text-purple-600 dark:text-purple-400 font-semibold hover:underline mt-1 cursor-pointer"
+                      >
+                        + Adicionar mês e ano da leitura
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-purple-100 dark:divide-stone-800 bg-white/80 dark:bg-stone-900/80 rounded-xl border border-purple-200/60 dark:border-stone-700 overflow-hidden">
+                      {book.readPeriods.map((period, idx) => {
+                        const readerBadgeItem = getReaderBadge(period.reader || book.assignedReader, settings.eleName, settings.elaName);
+                        return (
+                          <div key={period.id || idx} className="p-3 flex items-center justify-between gap-3 hover:bg-purple-50/30 dark:hover:bg-stone-800/40 transition-colors">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="w-6 h-6 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold text-[11px] flex items-center justify-center shrink-0">
+                                #{book.readPeriods!.length - idx}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-xs text-stone-900 dark:text-stone-100">
+                                    {formatReadPeriod(period)}
+                                  </span>
+                                  <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full border ${readerBadgeItem.bg} ${readerBadgeItem.text} ${readerBadgeItem.border}`}>
+                                    {readerBadgeItem.label}
+                                  </span>
+                                </div>
+                                {period.notes && (
+                                  <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5 truncate">
+                                    {period.notes}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReadPeriod(period.id)}
+                              className="p-1.5 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors shrink-0 cursor-pointer"
+                              title="Remover esta leitura"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
@@ -866,6 +1168,26 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
 
         </div>
       </div>
+
+      {/* Multi-API Cover Picker Modal */}
+      {isCoverPickerOpen && (
+        <CoverPickerModal
+          isOpen={isCoverPickerOpen}
+          onClose={() => setIsCoverPickerOpen(false)}
+          bookTitle={book.title}
+          bookAuthors={book.authors}
+          bookIsbn={book.isbn}
+          currentCoverUrl={book.coverUrl}
+          onSelectCover={async (newCoverUrl: string) => {
+            await onUpdateBook({
+              ...book,
+              coverUrl: newCoverUrl,
+              updatedAt: new Date().toISOString(),
+            });
+            setIsCoverPickerOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 };

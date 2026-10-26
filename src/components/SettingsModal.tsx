@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Settings, Heart, Trophy, Check, User } from 'lucide-react';
 import { LibrarySettings } from '../types/book';
 
@@ -40,9 +40,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-stone-900 rounded-3xl w-full max-w-md shadow-2xl border border-stone-200 dark:border-stone-800 flex flex-col overflow-hidden">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-stone-900 rounded-3xl w-full max-w-md shadow-2xl border border-stone-200 dark:border-stone-800 flex flex-col overflow-hidden"
+      >
         
         {/* Header */}
         <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
@@ -125,18 +145,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {onRestoreBaseBooks && (
             <div className="pt-2">
-              <div className="p-3 rounded-2xl bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 flex items-center justify-between gap-3">
+              <div className="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-stone-800/80 border border-amber-200/80 dark:border-amber-900/50 flex items-center justify-between gap-3">
                 <div className="text-xs">
-                  <p className="font-semibold text-stone-800 dark:text-stone-200">Restaurar Base de 84 Livros</p>
-                  <p className="text-[11px] text-stone-500 dark:text-stone-400">Recarrega e sincroniza os 84 títulos originais de Luan & Theresa na nuvem.</p>
+                  <p className="font-semibold text-stone-900 dark:text-stone-100">Restaurar Acervo Original de Fábrica</p>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                    Aviso: isso redefine os 84 títulos iniciais e sobrescreve notas, capas e progresso nesses 84 livros.
+                  </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => {
-                    onClose();
-                    onRestoreBaseBooks();
+                    const ok = window.confirm(
+                      "⚠️ ATENÇÃO: Restaurar o acervo original de fábrica irá sobrescrever os dados atuais dos 84 livros iniciais no banco de dados, resetando suas avaliações, resenhas e capas personalizadas nesses 84 livros.\n\nTem certeza de que deseja continuar?"
+                    );
+                    if (ok) {
+                      onClose();
+                      onRestoreBaseBooks();
+                    }
                   }}
-                  className="px-3 py-1.5 text-xs font-semibold bg-white dark:bg-stone-700 text-stone-800 dark:text-stone-200 border border-stone-300 dark:border-stone-600 rounded-xl hover:bg-stone-50 shadow-xs shrink-0"
+                  className="px-3 py-1.5 text-xs font-semibold bg-white dark:bg-stone-700 text-stone-700 dark:text-stone-200 border border-stone-300 dark:border-stone-600 rounded-xl hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 shadow-xs shrink-0 transition-colors"
                 >
                   Restaurar
                 </button>

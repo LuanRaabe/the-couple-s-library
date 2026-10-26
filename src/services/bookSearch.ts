@@ -528,17 +528,96 @@ export async function searchBooks(
   return combined;
 }
 
-/**
- * Find cover across multiple services for a given title/author
- */
-export async function fetchCoverForBook(title: string, author?: string): Promise<string | null> {
-  if (!title) return null;
+export interface CoverOption {
+  id: string;
+  url: string;
+  source: 'openlibrary' | 'google' | 'brasilapi' | 'gutendex';
+  sourceName: string;
+  sourceBadge: string;
+  title: string;
+  authors?: string;
+  editionYear?: string;
+}
 
-  // 1. Try Google Books
+/**
+ * Find cover across multiple services for a given title/author/isbn
+ */
+/**
+ * Helper to fetch with an abort timeout so slow APIs never block execution
+ */
+async function fetchWithTimeout(url: string, ms = 3800): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
   try {
-    const query = `${title} ${author || ''}`.trim();
+    const res = await fetch(url, { signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function fetchBrasilApiCoverOnly(cleanIsbn: string): Promise<string | null> {
+  if (!cleanIsbn) return null;
+  try {
+    const res = await fetchWithTimeout(`https://brasilapi.com.br/api/isbn/v1/${cleanIsbn}`, 3500);
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.cover_url && typeof data.cover_url === 'string') {
+        return data.cover_url;
+      }
+    }
+  } catch {}
+  return null;
+}
+
+async function fetchOpenLibraryCoverOnly(
+  title: string,
+  author?: string,
+  cleanIsbn?: string
+): Promise<string | null> {
+  if (cleanIsbn) {
+    try {
+      const bibKey = `ISBN:${cleanIsbn}`;
+      const res = await fetchWithTimeout(`https://openlibrary.org/api/books?bibkeys=${bibKey}&format=json&jscmd=data`, 3500);
+      if (res.ok) {
+        const data = await res.json();
+        const item = data[bibKey];
+        if (item?.cover?.large || item?.cover?.medium) {
+          return item.cover.large || item.cover.medium;
+        }
+      }
+    } catch {}
+  }
+
+  if (title) {
+    try {
+      const olQuery = `${title} ${author || ''}`.trim();
+      const res = await fetchWithTimeout(`https://openlibrary.org/search.json?q=${encodeURIComponent(olQuery)}&limit=1`, 3500);
+      if (res.ok) {
+        const data = await res.json();
+        const doc = data.docs?.[0];
+        if (doc?.cover_i) {
+          return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
+        }
+        if (doc?.isbn?.[0]) {
+          return `https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-L.jpg`;
+        }
+      }
+    } catch {}
+  }
+
+  return null;
+}
+
+async function fetchGoogleCoverOnly(
+  title: string,
+  author?: string,
+  cleanIsbn?: string
+): Promise<string | null> {
+  try {
+    const query = cleanIsbn ? `isbn:${cleanIsbn}` : `${title} ${author || ''}`.trim();
     const gUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=1`;
-    const res = await fetch(gUrl);
+    const res = await fetchWithTimeout(gUrl, 3500);
     if (res.ok) {
       const data = await res.json();
       const item = data.items?.[0];
@@ -547,27 +626,249 @@ export async function fetchCoverForBook(title: string, author?: string): Promise
         return link.replace(/^http:\/\//i, 'https://').replace('&edge=curl', '');
       }
     }
-  } catch (e) {
-    // continue to next provider
-  }
-
-  // 2. Try Open Library
-  try {
-    const olQuery = `${title} ${author || ''}`.trim();
-    const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(olQuery)}&limit=1`);
-    if (res.ok) {
-      const data = await res.json();
-      const doc = data.docs?.[0];
-      if (doc?.cover_i) {
-        return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
-      }
-      if (doc?.isbn && doc.isbn[0]) {
-        return `https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-L.jpg`;
-      }
-    }
-  } catch (e) {
-    // continue
-  }
-
+  } catch {}
   return null;
+}
+
+/**
+ * Find cover across multiple services for a given title/author/isbn.
+ * Queries providers concurrently when 'all' is selected for maximum speed.
+ */
+export async function fetchCoverForBook(
+  title: string,
+  author?: string,
+  isbn?: string,
+  preferredProvider: 'all' | 'google' | 'openlibrary' | 'brasilapi' = 'all'
+): Promise<string | null> {
+  if (!title && !isbn) return null;
+
+  const cleanIsbn = isbn ? isbn.replace(/[^0-9X]/gi, '') : '';
+
+  if (preferredProvider === 'brasilapi') {
+    return cleanIsbn ? fetchBrasilApiCoverOnly(cleanIsbn) : null;
+  }
+  if (preferredProvider === 'openlibrary') {
+    return fetchOpenLibraryCoverOnly(title, author, cleanIsbn);
+  }
+  if (preferredProvider === 'google') {
+    return fetchGoogleCoverOnly(title, author, cleanIsbn);
+  }
+
+  // When 'all', run candidate providers concurrently and pick the first valid response
+  const tasks: Promise<string | null>[] = [];
+  if (cleanIsbn) {
+    tasks.push(fetchBrasilApiCoverOnly(cleanIsbn));
+  }
+  tasks.push(fetchOpenLibraryCoverOnly(title, author, cleanIsbn));
+  tasks.push(fetchGoogleCoverOnly(title, author, cleanIsbn));
+
+  return new Promise((resolve) => {
+    let pending = tasks.length;
+    let resolved = false;
+
+    tasks.forEach(async (task) => {
+      try {
+        const url = await task;
+        if (url && !resolved) {
+          resolved = true;
+          resolve(url);
+        }
+      } catch {
+        // ignore error
+      } finally {
+        pending--;
+        if (pending === 0 && !resolved) {
+          resolve(null);
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Search covers from ALL available APIs (Open Library, Google Books, Brasil API, Gutendex)
+ * and returns all valid cover candidates so the user can choose the best one.
+ */
+export async function searchCoversFromAllApis(
+  title: string,
+  author?: string,
+  isbn?: string
+): Promise<CoverOption[]> {
+  const covers: CoverOption[] = [];
+  const seenUrls = new Set<string>();
+
+  const addCover = (c: CoverOption) => {
+    if (!c.url || seenUrls.has(c.url)) return;
+    seenUrls.add(c.url);
+    covers.push(c);
+  };
+
+  const cleanIsbn = isbn ? isbn.replace(/[^0-9X]/gi, '') : '';
+  const query = `${title} ${author || ''}`.trim();
+
+  const fetchPromises: Promise<void>[] = [];
+
+  // 1. Open Library covers by ISBN
+  if (cleanIsbn) {
+    fetchPromises.push(
+      (async () => {
+        try {
+          const bibKey = `ISBN:${cleanIsbn}`;
+          const res = await fetch(`https://openlibrary.org/api/books?bibkeys=${bibKey}&format=json&jscmd=data`);
+          if (res.ok) {
+            const data = await res.json();
+            const item = data[bibKey];
+            const url = item?.cover?.large || item?.cover?.medium;
+            if (url) {
+              addCover({
+                id: `ol-isbn-${cleanIsbn}`,
+                url,
+                source: 'openlibrary',
+                sourceName: 'Open Library',
+                sourceBadge: '🏛️ Open Library (ISBN)',
+                title: item.title || title,
+                authors: author,
+                editionYear: item.publish_date,
+              });
+            }
+          }
+        } catch {}
+      })()
+    );
+  }
+
+  // 2. Open Library search query (finds multiple editions & cover_i)
+  if (query) {
+    fetchPromises.push(
+      (async () => {
+        try {
+          const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=8`);
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.docs)) {
+              data.docs.forEach((doc: any, idx: number) => {
+                if (doc.cover_i) {
+                  addCover({
+                    id: `ol-doc-${doc.cover_i}-${idx}`,
+                    url: `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`,
+                    source: 'openlibrary',
+                    sourceName: 'Open Library',
+                    sourceBadge: '🏛️ Open Library',
+                    title: doc.title || title,
+                    authors: doc.author_name?.[0] || author,
+                    editionYear: doc.first_publish_year ? String(doc.first_publish_year) : undefined,
+                  });
+                } else if (doc.isbn && doc.isbn[0]) {
+                  addCover({
+                    id: `ol-isbn-cover-${doc.isbn[0]}-${idx}`,
+                    url: `https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-L.jpg`,
+                    source: 'openlibrary',
+                    sourceName: 'Open Library',
+                    sourceBadge: '🏛️ Open Library',
+                    title: doc.title || title,
+                    authors: doc.author_name?.[0] || author,
+                    editionYear: doc.first_publish_year ? String(doc.first_publish_year) : undefined,
+                  });
+                }
+              });
+            }
+          }
+        } catch {}
+      })()
+    );
+  }
+
+  // 3. Google Books search
+  if (query || cleanIsbn) {
+    fetchPromises.push(
+      (async () => {
+        try {
+          const searchParam = cleanIsbn ? `isbn:${cleanIsbn}` : query;
+          const gUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchParam)}&maxResults=6`;
+          const res = await fetch(gUrl);
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.items)) {
+              data.items.forEach((item: any) => {
+                const info = item.volumeInfo || {};
+                let link = info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail;
+                if (link) {
+                  link = link.replace(/^http:\/\//i, 'https://').replace('&edge=curl', '');
+                  addCover({
+                    id: `google-${item.id}`,
+                    url: link,
+                    source: 'google',
+                    sourceName: 'Google Livros',
+                    sourceBadge: '🔍 Google Books',
+                    title: info.title || title,
+                    authors: Array.isArray(info.authors) ? info.authors.join(', ') : author,
+                    editionYear: info.publishedDate ? info.publishedDate.substring(0, 4) : undefined,
+                  });
+                }
+              });
+            }
+          }
+        } catch {}
+      })()
+    );
+  }
+
+  // 4. Brasil API by ISBN
+  if (cleanIsbn) {
+    fetchPromises.push(
+      (async () => {
+        try {
+          const res = await fetch(`https://brasilapi.com.br/api/isbn/v1/${cleanIsbn}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.cover_url) {
+              addCover({
+                id: `brasilapi-${cleanIsbn}`,
+                url: data.cover_url,
+                source: 'brasilapi',
+                sourceName: 'Brasil API',
+                sourceBadge: '🇧🇷 Brasil API (CBL)',
+                title: data.title || title,
+                authors: Array.isArray(data.authors) ? data.authors.join(', ') : author,
+                editionYear: data.year ? String(data.year) : undefined,
+              });
+            }
+          }
+        } catch {}
+      })()
+    );
+  }
+
+  // 5. Gutendex (Project Gutenberg)
+  if (title) {
+    fetchPromises.push(
+      (async () => {
+        try {
+          const res = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(title)}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.results)) {
+              data.results.slice(0, 3).forEach((item: any) => {
+                const coverUrl = item.formats?.['image/jpeg'];
+                if (coverUrl) {
+                  addCover({
+                    id: `guten-${item.id}`,
+                    url: coverUrl,
+                    source: 'gutendex',
+                    sourceName: 'Gutenberg',
+                    sourceBadge: '📖 Gutenberg',
+                    title: item.title || title,
+                    authors: item.authors?.[0]?.name || author,
+                  });
+                }
+              });
+            }
+          }
+        } catch {}
+      })()
+    );
+  }
+
+  await Promise.allSettled(fetchPromises);
+  return covers;
 }

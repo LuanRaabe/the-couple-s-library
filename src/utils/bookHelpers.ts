@@ -74,3 +74,33 @@ export function calculateProgress(currentPage?: number, pageCount?: number): num
   if (!currentPage || currentPage <= 0) return 0;
   return Math.min(100, Math.round((currentPage / pageCount) * 100));
 }
+
+export const MONTH_NAMES = [
+  'Janeiro',
+  'Fevereiro',
+  'Março',
+  'Abril',
+  'Maio',
+  'Junho',
+  'Julho',
+  'Agosto',
+  'Setembro',
+  'Outubro',
+  'Novembro',
+  'Dezembro',
+];
+
+export function formatReadPeriod(period: { month: number; year: number }): string {
+  const monthName = MONTH_NAMES[period.month - 1] || `Mês ${period.month}`;
+  return `${monthName} de ${period.year}`;
+}
+
+export function calculateReadCount(book: { readCount?: number; readPeriods?: any[]; status: string }): number {
+  if (typeof book.readCount === 'number' && book.readCount > 0) {
+    return book.readCount;
+  }
+  if (book.readPeriods && book.readPeriods.length > 0) {
+    return book.readPeriods.length;
+  }
+  return book.status === 'lido' ? 1 : 0;
+}

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Star, Heart, BookOpen, MessageSquareHeart } from 'lucide-react';
+import { Star, Heart, BookOpen, MessageSquareHeart, RotateCcw } from 'lucide-react';
 import { Book, BookStatus, LibrarySettings } from '../types/book';
-import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress } from '../utils/bookHelpers';
+import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '../utils/bookHelpers';
 
 interface BookGridProps {
   books: Book[];
@@ -102,8 +102,17 @@ export const BookGrid: React.FC<BookGridProps> = ({
                 </div>
               )}
 
-              {/* Quick Status Pill */}
-              <div className="absolute bottom-2 right-2">
+              {/* Quick Status Pill & Re-reading badge */}
+              <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                {calculateReadCount(book) > 1 && (
+                  <span
+                    className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-md backdrop-blur-md bg-purple-600/90 text-white"
+                    title={`Livro lido e relido ${calculateReadCount(book)} vezes`}
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    <span>{calculateReadCount(book)}x</span>
+                  </span>
+                )}
                 <span
                   className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-md backdrop-blur-md border ${statusColor.bg} ${statusColor.text} ${statusColor.border}`}
                 >
