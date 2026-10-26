@@ -59,9 +59,17 @@
       "schema": "Book",
       "description": "Shared bookshelf containing books read, currently reading, and wishlist."
     },
+    "/books_preview/{bookId}": {
+      "schema": "Book",
+      "description": "Isolated preview/development bookshelf for staging and testing."
+    },
     "/settings/{settingsId}": {
       "schema": "LibrarySettings",
       "description": "Shared settings configuration for the couple's reading library."
+    },
+    "/settings_preview/{settingsId}": {
+      "schema": "LibrarySettings",
+      "description": "Isolated preview/development settings configuration."
     }
   }
 }

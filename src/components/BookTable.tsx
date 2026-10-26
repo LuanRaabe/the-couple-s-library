@@ -2,24 +2,25 @@ import React, { useState, useMemo } from 'react';
 import { 
   ArrowUpDown, 
   Star, 
-  ExternalLink, 
   Trash2, 
   BookMarked, 
-  Check, 
-  Heart,
-  MessageSquareHeart,
-  Eye,
-  RotateCcw
+  RotateCcw,
+  Save,
+  Undo2,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 import { Book, BookStatus, ReaderId, LibrarySettings } from '../types/book';
 import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '../utils/bookHelpers';
+import { getBookDraft, saveBookDraft, clearBookDraft, hasBookDraft } from '../utils/sessionDraft';
 
 interface BookTableProps {
   books: Book[];
   settings: LibrarySettings;
   onSelectBook: (book: Book) => void;
-  onUpdateStatus: (bookId: string, newStatus: BookStatus) => void;
-  onUpdateReader: (bookId: string, newReader: ReaderId) => void;
+  onUpdateStatus?: (bookId: string, newStatus: BookStatus) => void;
+  onUpdateReader?: (bookId: string, newReader: ReaderId) => void;
+  onUpdateBook?: (book: Book) => Promise<void>;
   onDeleteBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
 }
@@ -30,13 +31,27 @@ export const BookTable: React.FC<BookTableProps> = ({
   books,
   settings,
   onSelectBook,
-  onUpdateStatus,
-  onUpdateReader,
+  onUpdateBook,
   onDeleteBook,
   onToggleFavorite,
 }) => {
   const [sortField, setSortField] = useState<SortField>('dateAdded');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
+
+  // Local table drafts mapping bookId -> Partial<Book>
+  const [tableDrafts, setTableDrafts] = useState<Record<string, Partial<Book>>>(() => {
+    const initial: Record<string, Partial<Book>> = {};
+    books.forEach((b) => {
+      const draft = getBookDraft(b.id);
+      if (draft) {
+        initial[b.id] = draft;
+      }
+    });
+    return initial;
+  });
+
+  const [savingRows, setSavingRows] = useState<Record<string, boolean>>({});
+  const [savedSuccessRows, setSavedSuccessRows] = useState<Record<string, boolean>>({});
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -83,6 +98,62 @@ export const BookTable: React.FC<BookTableProps> = ({
       return sortAsc ? comparison : -comparison;
     });
   }, [books, sortField, sortAsc]);
+
+  // Update a book's draft in the table and persist in sessionStorage
+  const handleRowFieldChange = (bookId: string, updates: Partial<Book>) => {
+    saveBookDraft(bookId, updates);
+    setTableDrafts((prev) => ({
+      ...prev,
+      [bookId]: {
+        ...(prev[bookId] || {}),
+        ...updates,
+      },
+    }));
+  };
+
+  // Discard draft for a specific row
+  const handleDiscardRow = (bookId: string) => {
+    clearBookDraft(bookId);
+    setTableDrafts((prev) => {
+      const next = { ...prev };
+      delete next[bookId];
+      return next;
+    });
+  };
+
+  // Save row draft to the database, and only remove from session on completion
+  const handleSaveRow = async (book: Book) => {
+    const draft = tableDrafts[book.id];
+    if (!draft || !onUpdateBook) return;
+
+    setSavingRows((prev) => ({ ...prev, [book.id]: true }));
+    try {
+      const mergedBook: Book = {
+        ...book,
+        ...draft,
+        updatedAt: new Date().toISOString(),
+      };
+      await onUpdateBook(mergedBook);
+
+      // ONLY on database success, delete draft from sessionStorage
+      clearBookDraft(book.id);
+      setTableDrafts((prev) => {
+        const next = { ...prev };
+        delete next[book.id];
+        return next;
+      });
+
+      // Show temporary checkmark
+      setSavedSuccessRows((prev) => ({ ...prev, [book.id]: true }));
+      setTimeout(() => {
+        setSavedSuccessRows((prev) => ({ ...prev, [book.id]: false }));
+      }, 3000);
+    } catch (err) {
+      console.error('Error saving row:', err);
+    } finally {
+      setSavingRows((prev) => ({ ...prev, [book.id]: false }));
+    }
+  };
 
   if (books.length === 0) {
     return (
@@ -140,29 +211,40 @@ export const BookTable: React.FC<BookTableProps> = ({
               <th scope="col" className="py-4 px-4 text-center">
                 Recomendações
               </th>
-              <th scope="col" className="py-4 px-4 text-right">
+              <th scope="col" className="py-4 px-4 text-right min-w-[140px]">
                 Ações
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-100 dark:divide-stone-800/80">
             {sortedBooks.map((book) => {
-              const readerBadge = getReaderBadge(book.assignedReader, settings.eleName, settings.elaName);
-              const statusColor = STATUS_COLORS[book.status] || STATUS_COLORS.quero_ler;
+              const rowDraft = tableDrafts[book.id];
+              const effectiveStatus: BookStatus = rowDraft?.status || book.status;
+              const effectiveReader: ReaderId = rowDraft?.assignedReader || book.assignedReader;
+              const hasDraft = !!rowDraft || hasBookDraft(book.id);
+              const isSavingThisRow = !!savingRows[book.id];
+              const isSavedSuccess = !!savedSuccessRows[book.id];
+
+              const readerBadge = getReaderBadge(effectiveReader, settings.eleName, settings.elaName);
+              const statusColor = STATUS_COLORS[effectiveStatus] || STATUS_COLORS.quero_ler;
               const progress = calculateProgress(book.currentPage, book.pageCount);
               const recCount = book.recommendations?.length || 0;
 
               return (
                 <tr
                   key={book.id}
-                  className="hover:bg-amber-50/40 dark:hover:bg-stone-800/50 transition-colors group"
+                  className={`transition-colors group ${
+                    hasDraft 
+                      ? 'bg-amber-50/60 dark:bg-amber-950/20' 
+                      : 'hover:bg-amber-50/40 dark:hover:bg-stone-800/50'
+                  }`}
                 >
                   {/* Favorite star */}
                   <td className="p-4 text-center">
                     <button
                       type="button"
                       onClick={() => onToggleFavorite(book.id)}
-                      className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
+                      className="p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
                       title={book.favorite ? 'Remover dos favoritos' : 'Marcar como favorito'}
                     >
                       <Star
@@ -198,12 +280,22 @@ export const BookTable: React.FC<BookTableProps> = ({
                         )}
                       </div>
                       <div className="min-w-0">
-                        <h4
-                          onClick={() => onSelectBook(book)}
-                          className="font-serif font-bold text-stone-900 dark:text-stone-100 hover:text-amber-700 dark:hover:text-amber-400 cursor-pointer truncate max-w-xs sm:max-w-md"
-                        >
-                          {book.title}
-                        </h4>
+                        <div className="flex items-center gap-1.5">
+                          <h4
+                            onClick={() => onSelectBook(book)}
+                            className="font-serif font-bold text-stone-900 dark:text-stone-100 hover:text-amber-700 dark:hover:text-amber-400 cursor-pointer truncate max-w-xs sm:max-w-md"
+                          >
+                            {book.title}
+                          </h4>
+                          {hasDraft && (
+                            <span 
+                              className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 shrink-0"
+                              title="Alterações salvas na sessão do navegador"
+                            >
+                              Rascunho
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-stone-500 dark:text-stone-400 truncate">
                           {book.authors || 'Autor Desconhecido'}
                         </p>
@@ -216,13 +308,13 @@ export const BookTable: React.FC<BookTableProps> = ({
                     </div>
                   </td>
 
-                  {/* Editable Reader */}
+                  {/* Editable Reader Dropdown */}
                   <td className="py-3 px-4">
                     <select
-                      value={book.assignedReader}
-                      onChange={(e) => onUpdateReader(book.id, e.target.value as ReaderId)}
+                      value={effectiveReader}
+                      onChange={(e) => handleRowFieldChange(book.id, { assignedReader: e.target.value as ReaderId })}
                       className={`text-xs font-semibold rounded-lg px-2.5 py-1 border transition-colors cursor-pointer bg-white dark:bg-stone-900 ${readerBadge.text} ${readerBadge.border}`}
-                      title={`Alterar leitor responsável por este livro`}
+                      title="Alterar leitor (Clique em Salvar para persistir no banco)"
                     >
                       <option value="ele">{settings.eleName}</option>
                       <option value="ela">{settings.elaName}</option>
@@ -230,13 +322,14 @@ export const BookTable: React.FC<BookTableProps> = ({
                     </select>
                   </td>
 
-                  {/* Status dropdown & Re-reading badge */}
+                  {/* Editable Status dropdown & Re-reading badge */}
                   <td className="py-3 px-4">
                     <div className="flex items-center gap-1.5">
                       <select
-                        value={book.status}
-                        onChange={(e) => onUpdateStatus(book.id, e.target.value as BookStatus)}
+                        value={effectiveStatus}
+                        onChange={(e) => handleRowFieldChange(book.id, { status: e.target.value as BookStatus })}
                         className={`text-xs font-medium rounded-lg px-2.5 py-1 border transition-colors cursor-pointer bg-white dark:bg-stone-900 ${statusColor.text} ${statusColor.border}`}
+                        title="Alterar status (Clique em Salvar para persistir no banco)"
                       >
                         <option value="quero_ler">Quero Ler</option>
                         <option value="lendo">Lendo</option>
@@ -260,78 +353,111 @@ export const BookTable: React.FC<BookTableProps> = ({
                   <td className="py-3 px-4 min-w-[140px]">
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs">
-                        <span className="font-medium text-stone-700 dark:text-stone-300">{progress}%</span>
+                        <span className="font-semibold text-stone-700 dark:text-stone-300">
+                          {progress}%
+                        </span>
                         <span className="text-[11px] text-stone-400">
                           {book.currentPage || 0}/{book.pageCount || '?'} pág.
                         </span>
                       </div>
-                      <div className="w-full bg-stone-100 dark:bg-stone-800 rounded-full h-1.5 overflow-hidden">
+                      <div className="w-full bg-stone-200 dark:bg-stone-700 rounded-full h-1.5 overflow-hidden">
                         <div
-                          className="bg-amber-600 dark:bg-amber-500 h-1.5 rounded-full transition-all duration-300"
+                          className="bg-amber-600 h-1.5 rounded-full"
                           style={{ width: `${progress}%` }}
                         />
                       </div>
                     </div>
                   </td>
 
-                  {/* Rating Ele */}
+                  {/* Ratings Ele */}
                   <td className="py-3 px-4">
-                    {book.ratings?.ele !== undefined && book.ratings.ele > 0 ? (
-                      <div className="flex items-center gap-1 font-semibold text-xs text-amber-700 dark:text-amber-400">
+                    {book.ratings?.ele ? (
+                      <span className="inline-flex items-center gap-1 font-semibold text-amber-700 dark:text-amber-400">
                         <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500" />
-                        <span>{book.ratings.ele}</span>
-                      </div>
+                        {book.ratings.ele}
+                      </span>
                     ) : (
-                      <span className="text-xs text-stone-400">—</span>
+                      <span className="text-stone-300 dark:text-stone-600">—</span>
                     )}
                   </td>
 
-                  {/* Rating Ela */}
+                  {/* Ratings Ela */}
                   <td className="py-3 px-4">
-                    {book.ratings?.ela !== undefined && book.ratings.ela > 0 ? (
-                      <div className="flex items-center gap-1 font-semibold text-xs text-rose-700 dark:text-rose-400">
+                    {book.ratings?.ela ? (
+                      <span className="inline-flex items-center gap-1 font-semibold text-rose-700 dark:text-rose-400">
                         <Star className="w-3.5 h-3.5 fill-rose-400 text-rose-500" />
-                        <span>{book.ratings.ela}</span>
-                      </div>
+                        {book.ratings.ela}
+                      </span>
                     ) : (
-                      <span className="text-xs text-stone-400">—</span>
+                      <span className="text-stone-300 dark:text-stone-600">—</span>
                     )}
                   </td>
 
-                  {/* Couple Recommendations */}
+                  {/* Recommendations */}
                   <td className="py-3 px-4 text-center">
                     {recCount > 0 ? (
-                      <button
-                        type="button"
-                        onClick={() => onSelectBook(book)}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800 hover:bg-rose-100"
-                      >
-                        <Heart className="w-3 h-3 fill-rose-500" />
-                        <span>{recCount}</span>
-                      </button>
+                      <span className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                        ♥ {recCount}
+                      </span>
                     ) : (
-                      <span className="text-xs text-stone-400">—</span>
+                      <span className="text-stone-300 dark:text-stone-600">—</span>
                     )}
                   </td>
 
-                  {/* Actions */}
+                  {/* Actions (with Save button if drafted) */}
                   <td className="py-3 px-4 text-right">
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1.5">
+                      {isSavedSuccess && (
+                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-0.5">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Salvo!</span>
+                        </span>
+                      )}
+
+                      {hasDraft && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleDiscardRow(book.id)}
+                            className="p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+                            title="Descartar rascunho da sessão"
+                          >
+                            <Undo2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isSavingThisRow}
+                            onClick={() => handleSaveRow(book)}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                            title="Salvar alterações no banco de dados"
+                          >
+                            <Save className="w-3 h-3" />
+                            <span>{isSavingThisRow ? '...' : 'Salvar'}</span>
+                          </button>
+                        </>
+                      )}
+
                       <button
                         type="button"
                         onClick={() => onSelectBook(book)}
-                        className="p-1.5 text-stone-500 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
-                        title="Ver detalhes e anotações"
+                        className="px-2 py-1 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:text-amber-700 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
                       >
-                        <Eye className="w-4 h-4" />
+                        Abrir
                       </button>
+
                       <button
                         type="button"
-                        onClick={() => onDeleteBook(book.id)}
-                        className="p-1.5 text-stone-400 hover:text-rose-600 dark:text-stone-500 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors opacity-0 group-hover:opacity-100"
+                        onClick={() => {
+                          if (window.confirm(`Excluir "${book.title}" da estante?`)) {
+                            clearBookDraft(book.id);
+                            onDeleteBook(book.id);
+                          }
+                        }}
+                        className="p-1.5 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
                         title="Excluir livro"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>

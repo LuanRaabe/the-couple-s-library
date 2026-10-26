@@ -3,6 +3,7 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from '../../../firebase';
 import { LibrarySettings } from '../types';
+import { getSettingsCollection } from '../../../utils/envHelper';
 
 const DEFAULT_SETTINGS: LibrarySettings = {
   eleName: 'Luan',
@@ -16,7 +17,7 @@ export function useLibrarySettings(currentUser: FirebaseUser | null, onNotify?: 
   useEffect(() => {
     if (!currentUser) return;
 
-    const settingsDocPath = 'settings';
+    const settingsDocPath = getSettingsCollection();
     const settingsDocRef = doc(db, settingsDocPath, 'couple');
 
     const unsubscribe = onSnapshot(
@@ -47,13 +48,14 @@ export function useLibrarySettings(currentUser: FirebaseUser | null, onNotify?: 
       return;
     }
 
-    const path = 'settings/couple';
+    const settingsCollection = getSettingsCollection();
+    const path = `${settingsCollection}/couple`;
     try {
-      await setDoc(doc(db, 'settings', 'couple'), {
+      await setDoc(doc(db, settingsCollection, 'couple'), {
         ...newSettings,
         updatedBy: currentUser.uid,
         updatedAt: new Date().toISOString(),
-      });
+      }, { merge: true });
       if (onNotify) onNotify('Configurações do casal salvas com sucesso no banco!');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);

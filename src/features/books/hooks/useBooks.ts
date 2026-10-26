@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
 import { db, handleFirestoreError, OperationType } from '../../../firebase';
 import { Book, BookStatus, ReaderId } from '../types';
@@ -13,19 +13,15 @@ import {
   deleteBookFromDb,
   seedBaseBooksInDb,
 } from '../services/bookService';
+import { getDbTarget } from '../../../utils/envHelper';
+import { clearBookDraft } from '../../../utils/sessionDraft';
 
-export function useBooks(currentUser: FirebaseUser | null) {
+export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: number) {
   const [books, setBooks] = useState<Book[]>(() => {
     return USER_INITIAL_BOOKS.map((b, idx) => ({
       ...b,
       id: `book_${(b as any).originalId || idx + 1}`,
     }));
-  });
-
-  // Automatic updates toggle (Default: ON / true)
-  const [autoSync, setAutoSync] = useState<boolean>(() => {
-    const saved = localStorage.getItem('nossa_estante_auto_sync');
-    return saved !== null ? saved === 'true' : true;
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -35,86 +31,16 @@ export function useBooks(currentUser: FirebaseUser | null) {
   const [seedNotice, setSeedNotice] = useState<string | null>(null);
   const isSeedingRef = useRef(false);
 
-  const showAutoSaveToast = (msg = 'Salvo automaticamente no banco de dados!') => {
+  const isBypassUser = currentUser?.uid === 'dev-maintenance-admin';
+
+  const showSaveToast = (msg = 'Salvo com sucesso no banco de dados!') => {
     setSaveNotice(msg);
     setTimeout(() => {
       setSaveNotice((curr) => (curr === msg ? null : curr));
     }, 3500);
   };
 
-  const handleToggleAutoSync = () => {
-    setAutoSync((prev) => {
-      const nextVal = !prev;
-      localStorage.setItem('nossa_estante_auto_sync', String(nextVal));
-      if (nextVal) {
-        showAutoSaveToast('Atualização automática ATIVADA em tempo real.');
-      } else {
-        showAutoSaveToast('Atualização automática DESATIVADA (Pausada).');
-      }
-      return nextVal;
-    });
-  };
-
-  // Manual sync when autoSync is paused
-  const handleManualSync = async () => {
-    if (!currentUser) {
-      setErrorNotice('Faça login com sua conta Google para sincronizar com o banco.');
-      return;
-    }
-
-    try {
-      setIsSyncing(true);
-      setErrorNotice(null);
-      const snapshot = await getDocs(collection(db, 'books'));
-      const loadedBooks: Book[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        loadedBooks.push({
-          id: docSnap.id,
-          title: data.title || '',
-          authors: data.authors || '',
-          coverUrl: data.coverUrl || '',
-          isbn: data.isbn || '',
-          pageCount: data.pageCount || 0,
-          currentPage: data.currentPage || 0,
-          publisher: data.publisher || '',
-          publishedDate: data.publishedDate || '',
-          description: data.description || '',
-          categories: data.categories || [],
-          status: data.status || 'quero_ler',
-          assignedReader: data.assignedReader || 'ambos',
-          ratings: data.ratings || {},
-          notes: data.notes || {},
-          recommendations: data.recommendations || [],
-          readingLogs: data.readingLogs || [],
-          favorite: !!data.favorite,
-          dateAdded: data.dateAdded || '',
-          dateStarted: data.dateStarted || '',
-          dateFinished: data.dateFinished || '',
-          createdBy: data.createdBy || '',
-          updatedAt: data.updatedAt || '',
-        });
-      });
-
-      loadedBooks.sort((a, b) => {
-        const aNum = parseInt(a.id.replace('book_', ''), 10);
-        const bNum = parseInt(b.id.replace('book_', ''), 10);
-        if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-        return a.title.localeCompare(b.title);
-      });
-
-      setBooks(loadedBooks);
-      showAutoSaveToast('Biblioteca sincronizada manualmente com o banco!');
-    } catch (err) {
-      console.error('Manual sync error:', err);
-      setErrorNotice('Erro ao sincronizar manualmente.');
-      handleFirestoreError(err, OperationType.LIST, 'books');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // Listen to Books collection in real-time when autoSync is true
+  // Real-time listener for the Books collection
   useEffect(() => {
     if (!currentUser) {
       setIsLoading(false);
@@ -127,20 +53,19 @@ export function useBooks(currentUser: FirebaseUser | null) {
       return;
     }
 
-    // If autoSync is disabled, do not attach real-time continuous listener
-    if (!autoSync) {
+    if (isBypassUser) {
+      // In maintenance bypass mode without Google login, load base books for interactive UI testing
       setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    const booksCollectionPath = 'books';
+    const booksCollectionPath = getDbTarget();
     const booksRef = collection(db, booksCollectionPath);
 
     const unsubscribe = onSnapshot(
       booksRef,
       (snapshot) => {
-        // If Firestore is empty (first login on new database)
         if (snapshot.empty) {
           if (!isSeedingRef.current) {
             isSeedingRef.current = true;
@@ -174,6 +99,8 @@ export function useBooks(currentUser: FirebaseUser | null) {
             notes: data.notes || {},
             recommendations: data.recommendations || [],
             readingLogs: data.readingLogs || [],
+            readCount: data.readCount || (data.status === 'lido' ? 1 : 0),
+            readPeriods: data.readPeriods || [],
             favorite: !!data.favorite,
             dateAdded: data.dateAdded || '',
             dateStarted: data.dateStarted || '',
@@ -203,7 +130,7 @@ export function useBooks(currentUser: FirebaseUser | null) {
     );
 
     return () => unsubscribe();
-  }, [currentUser, autoSync]);
+  }, [currentUser, dbTargetTrigger]);
 
   // Actions
   const handleUpdateStatus = async (bookId: string, newStatus: BookStatus) => {
@@ -224,20 +151,15 @@ export function useBooks(currentUser: FirebaseUser | null) {
       )
     );
 
-    if (!currentUser) {
-      setErrorNotice('Atenção: Você está desconectado. Faça login para salvar alterações no banco de dados na nuvem.');
-      return;
-    }
-
-    if (!autoSync) {
-      showAutoSaveToast('Status alterado localmente (Auto-update desativado).');
+    if (!currentUser || isBypassUser) {
+      showSaveToast('Status alterado na sessão.');
       return;
     }
 
     try {
       setIsSyncing(true);
       await updateBookStatusInDb(bookId, newStatus, book);
-      showAutoSaveToast('Status atualizado e salvo automaticamente no banco!');
+      showSaveToast('Status atualizado no banco!');
     } finally {
       setIsSyncing(false);
     }
@@ -248,20 +170,15 @@ export function useBooks(currentUser: FirebaseUser | null) {
       prev.map((b) => (b.id === bookId ? { ...b, assignedReader: newReader } : b))
     );
 
-    if (!currentUser) {
-      setErrorNotice('Atenção: Faça login para salvar o leitor no banco compartilhado.');
-      return;
-    }
-
-    if (!autoSync) {
-      showAutoSaveToast('Leitor alterado localmente (Auto-update desativado).');
+    if (!currentUser || isBypassUser) {
+      showSaveToast('Leitor alterado na sessão.');
       return;
     }
 
     try {
       setIsSyncing(true);
       await updateBookReaderInDb(bookId, newReader);
-      showAutoSaveToast('Leitor do livro atualizado no banco de dados!');
+      showSaveToast('Leitor atualizado no banco!');
     } finally {
       setIsSyncing(false);
     }
@@ -274,19 +191,14 @@ export function useBooks(currentUser: FirebaseUser | null) {
     const newFav = !book.favorite;
     setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, favorite: newFav } : b)));
 
-    if (!currentUser) {
-      setErrorNotice('Atenção: Faça login para salvar favoritos no banco de dados.');
-      return;
-    }
-
-    if (!autoSync) {
-      showAutoSaveToast('Favorito alterado localmente (Auto-update desativado).');
+    if (!currentUser || isBypassUser) {
+      showSaveToast(newFav ? 'Marcado como favorito!' : 'Removido dos favoritos!');
       return;
     }
 
     try {
       await toggleFavoriteInDb(bookId, newFav);
-      showAutoSaveToast(newFav ? 'Marcado como favorito no banco!' : 'Removido dos favoritos no banco!');
+      showSaveToast(newFav ? 'Marcado como favorito no banco!' : 'Removido dos favoritos no banco!');
     } catch (err) {
       console.error('Error favorite:', err);
     }
@@ -303,42 +215,37 @@ export function useBooks(currentUser: FirebaseUser | null) {
 
     setBooks((prev) => [newBook, ...prev]);
 
-    if (!currentUser) {
-      setErrorNotice('Livro adicionado na sessão local. Faça login para salvá-lo no banco compartilhado.');
-      return;
-    }
-
-    if (!autoSync) {
-      showAutoSaveToast('Livro adicionado localmente (Auto-update desativado).');
+    if (!currentUser || isBypassUser) {
+      showSaveToast('Livro adicionado na sessão.');
       return;
     }
 
     try {
       setIsSyncing(true);
       await createBookInDb(docId, bookData, currentUser.uid);
-      showAutoSaveToast('Livro adicionado e salvo com sucesso no banco!');
+      showSaveToast('Livro adicionado e salvo com sucesso no banco!');
     } finally {
       setIsSyncing(false);
     }
   };
 
   const handleUpdateBook = async (updatedBook: Book) => {
+    // 1. Immediately apply to in-memory state
     setBooks((prev) => prev.map((b) => (b.id === updatedBook.id ? updatedBook : b)));
 
-    if (!currentUser) {
-      setErrorNotice('Alterações aplicadas na sessão. Faça login para salvar permanentemente no banco.');
-      return;
-    }
-
-    if (!autoSync) {
-      showAutoSaveToast('Alterações salvas localmente (Auto-update desativado).');
+    if (!currentUser || isBypassUser) {
+      clearBookDraft(updatedBook.id);
+      showSaveToast('Alterações salvas na sessão.');
       return;
     }
 
     try {
       setIsSyncing(true);
+      // 2. Persist to Firestore
       await updateBookInDb(updatedBook);
-      showAutoSaveToast('Alterações salvas automaticamente no banco de dados!');
+      // 3. Clear session draft ONLY after database update completes
+      clearBookDraft(updatedBook.id);
+      showSaveToast('Alterações salvas com sucesso no banco!');
     } finally {
       setIsSyncing(false);
     }
@@ -346,35 +253,31 @@ export function useBooks(currentUser: FirebaseUser | null) {
 
   const handleDeleteBook = async (bookId: string) => {
     setBooks((prev) => prev.filter((b) => b.id !== bookId));
+    clearBookDraft(bookId);
 
-    if (!currentUser) {
-      setErrorNotice('Livro excluído localmente. Faça login para sincronizar no banco de dados.');
-      return;
-    }
-
-    if (!autoSync) {
-      showAutoSaveToast('Livro excluído localmente (Auto-update desativado).');
+    if (!currentUser || isBypassUser) {
+      showSaveToast('Livro excluído da sessão.');
       return;
     }
 
     try {
       setIsSyncing(true);
       await deleteBookFromDb(bookId);
-      showAutoSaveToast('Livro excluído do banco de dados.');
+      showSaveToast('Livro excluído do banco de dados.');
     } finally {
       setIsSyncing(false);
     }
   };
 
   const handleRestoreBaseBooks = async () => {
-    if (!currentUser) {
+    if (!currentUser || isBypassUser) {
       setErrorNotice('Faça login com sua conta Google para restaurar livros na nuvem.');
       return;
     }
 
     try {
       setIsSyncing(true);
-      setSeedNotice('Restaurando os 84 livros na nuvem do Firebase...');
+      setSeedNotice('Restaurando os 84 livros no banco de dados...');
       await seedBaseBooksInDb(currentUser, true);
       setSeedNotice('Acervo de 84 livros sincronizado com sucesso!');
       setTimeout(() => setSeedNotice(null), 5000);
@@ -390,9 +293,6 @@ export function useBooks(currentUser: FirebaseUser | null) {
     books,
     isLoading,
     isSyncing,
-    autoSync,
-    handleToggleAutoSync,
-    handleManualSync,
     errorNotice,
     setErrorNotice,
     saveNotice,

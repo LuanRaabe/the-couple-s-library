@@ -7,16 +7,18 @@ import React, { useState } from 'react';
 import { RefreshCw, Heart } from 'lucide-react';
 
 // FDD Feature Hooks & Types
-import { useAuth, AuthBanner } from './features/auth';
+import { useAuth } from './features/auth';
 import { useLibrarySettings, SettingsModal } from './features/settings';
-import { useBooks, useBookFilters, useBackgroundCoverSync, Book, BookStatus } from './features/books';
+import { useBooks, useBookFilters, useBackgroundCoverSync, Book } from './features/books';
 
 // Shared Components
 import { Header } from './shared/components/Header';
 import { NavigationFilterBar, ActiveTab } from './shared/components/NavigationFilterBar';
 import { NotificationToast } from './shared/components/NotificationToast';
 
-// Feature Views & Modals
+// Feature Views, Modals & Gate Screens
+import { LoginPage } from './components/LoginPage';
+import { DebugMenu } from './components/DebugMenu';
 import { BookGrid } from './components/BookGrid';
 import { BookTable } from './components/BookTable';
 import { BookKanban } from './components/BookKanban';
@@ -28,8 +30,19 @@ import { BatchCoverSyncModal } from './components/BatchCoverSyncModal';
 import { BackgroundSyncFloatingWidget } from './components/BackgroundSyncFloatingWidget';
 
 export default function App() {
-  // Auth feature slice
-  const { currentUser, loginWithGoogle, logoutUser } = useAuth();
+  // Auth feature slice with maintenance bypass capability
+  const { 
+    currentUser, 
+    isMaintenanceMode,
+    authInitialized,
+    loginWithGoogle, 
+    logoutUser,
+    enableMaintenanceBypass,
+    disableMaintenanceBypass,
+  } = useAuth();
+
+  // State trigger to re-read Firestore when DB collection target changes in Debug Menu
+  const [dbTargetTrigger, setDbTargetTrigger] = useState<number>(0);
 
   // Settings feature slice
   const { settings, saveSettings } = useLibrarySettings(currentUser);
@@ -39,9 +52,6 @@ export default function App() {
     books,
     isLoading,
     isSyncing,
-    autoSync,
-    handleToggleAutoSync,
-    handleManualSync,
     errorNotice,
     setErrorNotice,
     saveNotice,
@@ -55,7 +65,7 @@ export default function App() {
     handleUpdateBook,
     handleDeleteBook,
     handleRestoreBaseBooks,
-  } = useBooks(currentUser);
+  } = useBooks(currentUser, dbTargetTrigger);
 
   // Books search & filtering slice
   const {
@@ -81,15 +91,53 @@ export default function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSyncCoversModalOpen, setIsSyncCoversModalOpen] = useState(false);
+  const [isDebugMenuOpen, setIsDebugMenuOpen] = useState(false);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
 
   // Background cover synchronization
   const coverSync = useBackgroundCoverSync();
 
+  // 1. Initial Auth Loading Gate
+  if (!authInitialized) {
+    return (
+      <div className="min-h-screen bg-[#faf8f5] dark:bg-stone-950 flex flex-col items-center justify-center p-4">
+        <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mb-3" />
+        <p className="font-serif text-sm text-stone-500">
+          Carregando Nossa Estante...
+        </p>
+      </div>
+    );
+  }
+
+  // 2. Mandatory Login Screen Gate (Books are only accessible after authentication or maintenance bypass)
+  if (!currentUser) {
+    return (
+      <>
+        <LoginPage
+          onLogin={loginWithGoogle}
+          onEnableMaintenance={enableMaintenanceBypass}
+          onOpenDebugMenu={() => setIsDebugMenuOpen(true)}
+          eleName={settings.eleName}
+          elaName={settings.elaName}
+        />
+
+        <DebugMenu
+          isOpen={isDebugMenuOpen}
+          onClose={() => setIsDebugMenuOpen(false)}
+          isMaintenanceMode={isMaintenanceMode}
+          onEnableMaintenance={enableMaintenanceBypass}
+          onDisableMaintenance={disableMaintenanceBypass}
+          onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
+        />
+      </>
+    );
+  }
+
+  // 3. Authenticated Bookshelf Experience
   return (
     <div className="min-h-screen bg-[#faf8f5] dark:bg-stone-950 text-stone-800 dark:text-stone-200 flex flex-col font-sans selection:bg-amber-200 dark:selection:bg-amber-900 selection:text-amber-950">
       
-      {/* Header (with Auto-Update Toggle & Manual Sync) */}
+      {/* Header */}
       <Header
         settings={settings}
         currentUser={currentUser}
@@ -101,24 +149,14 @@ export default function App() {
         totalBooks={books.length}
         readCount={readCount}
         isSyncing={isSyncing}
-        autoSync={autoSync}
-        onToggleAutoSync={handleToggleAutoSync}
-        onManualSync={handleManualSync}
+        isMaintenanceMode={isMaintenanceMode}
+        onOpenDebugMenu={() => setIsDebugMenuOpen(true)}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         
-        {/* Unauthenticated Welcome Banner */}
-        {!currentUser && (
-          <AuthBanner
-            onLogin={loginWithGoogle}
-            eleName={settings.eleName}
-            elaName={settings.elaName}
-          />
-        )}
-
-        {/* Global Notifications (Save confirmation, Seed status, Errors) */}
+        {/* Global Notifications */}
         <NotificationToast
           saveNotice={saveNotice}
           onCloseSaveNotice={() => setSaveNotice(null)}
@@ -168,6 +206,7 @@ export default function App() {
                 onSelectBook={(b) => setSelectedBook(b)}
                 onUpdateStatus={handleUpdateStatus}
                 onUpdateReader={handleUpdateReader}
+                onUpdateBook={handleUpdateBook}
                 onDeleteBook={handleDeleteBook}
                 onToggleFavorite={handleToggleFavorite}
               />
@@ -252,7 +291,7 @@ export default function App() {
         }}
       />
 
-      {/* Background Floating Status Widget (visible when sync is active and modal is closed) */}
+      {/* Background Floating Status Widget */}
       <BackgroundSyncFloatingWidget
         isRunning={coverSync.isRunning && !isSyncCoversModalOpen}
         currentIndex={coverSync.currentIndex}
@@ -261,6 +300,16 @@ export default function App() {
         updatedCount={coverSync.updatedCount}
         onOpenModal={() => setIsSyncCoversModalOpen(true)}
         onCancel={coverSync.cancelSync}
+      />
+
+      {/* Debug and Maintenance Menu */}
+      <DebugMenu
+        isOpen={isDebugMenuOpen}
+        onClose={() => setIsDebugMenuOpen(false)}
+        isMaintenanceMode={isMaintenanceMode}
+        onEnableMaintenance={enableMaintenanceBypass}
+        onDisableMaintenance={disableMaintenanceBypass}
+        onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
       />
 
     </div>

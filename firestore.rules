@@ -52,6 +52,13 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isValidId(bookId);
     }
 
+    match /books_preview/{bookId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(bookId) && isValidBook(incoming());
+      allow update: if isSignedIn() && isValidId(bookId) && isValidBook(incoming());
+      allow delete: if isSignedIn() && isValidId(bookId);
+    }
+
     function isValidSettings(data) {
       return (!('eleName' in data) || (data.eleName is string && data.eleName.size() <= 100)) &&
         (!('elaName' in data) || (data.elaName is string && data.elaName.size() <= 100)) &&
@@ -59,6 +66,12 @@ service cloud.firestore {
     }
 
     match /settings/{settingsId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(settingsId) && isValidSettings(incoming());
+      allow delete: if isSignedIn() && isValidId(settingsId);
+    }
+
+    match /settings_preview/{settingsId} {
       allow read: if isSignedIn();
       allow create, update: if isSignedIn() && isValidId(settingsId) && isValidSettings(incoming());
       allow delete: if isSignedIn() && isValidId(settingsId);
