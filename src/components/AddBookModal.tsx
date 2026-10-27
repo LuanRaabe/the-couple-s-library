@@ -140,8 +140,6 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
-
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -289,6 +287,8 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
 
   return (
     <div

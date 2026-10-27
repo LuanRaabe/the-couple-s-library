@@ -33,7 +33,11 @@ export function useLibrarySettings(currentUser: FirebaseUser | null, onNotify?: 
         }
       },
       (error) => {
-        handleFirestoreError(error, OperationType.GET, `${settingsDocPath}/couple`);
+        try {
+          handleFirestoreError(error, OperationType.GET, `${settingsDocPath}/couple`);
+        } catch (e) {
+          console.warn('Firestore settings snapshot listener caught:', e);
+        }
       }
     );
 

@@ -7,7 +7,6 @@ interface SettingsModalProps {
   onClose: () => void;
   settings: LibrarySettings;
   onSaveSettings: (newSettings: LibrarySettings) => Promise<void>;
-  onRestoreBaseBooks?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -15,12 +14,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   settings,
   onSaveSettings,
-  onRestoreBaseBooks,
 }) => {
-  const [eleName, setEleName] = useState(settings.eleName || 'Luan');
-  const [elaName, setElaName] = useState(settings.elaName || 'Theresa');
-  const [yearlyGoal, setYearlyGoal] = useState<number>(settings.yearlyGoal || 40);
+  const [eleName, setEleName] = useState(settings?.eleName || 'Luan');
+  const [elaName, setElaName] = useState(settings?.elaName || 'Theresa');
+  const [yearlyGoal, setYearlyGoal] = useState<number>(settings?.yearlyGoal || 40);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (settings) {
+      setEleName(settings.eleName || 'Luan');
+      setElaName(settings.elaName || 'Theresa');
+      setYearlyGoal(settings.yearlyGoal || 40);
+    }
+  }, [settings]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -39,16 +55,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setIsSaving(false);
     }
   };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
 
   return (
     <div
@@ -142,34 +148,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Quantos livros vocês dois planejam concluir durante este ano.
             </span>
           </div>
-
-          {onRestoreBaseBooks && (
-            <div className="pt-2">
-              <div className="p-3.5 rounded-2xl bg-amber-50/80 dark:bg-stone-800/80 border border-amber-200/80 dark:border-amber-900/50 flex items-center justify-between gap-3">
-                <div className="text-xs">
-                  <p className="font-semibold text-stone-900 dark:text-stone-100">Restaurar Acervo Original de Fábrica</p>
-                  <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                    Aviso: isso redefine os 84 títulos iniciais e sobrescreve notas, capas e progresso nesses 84 livros.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const ok = window.confirm(
-                      "⚠️ ATENÇÃO: Restaurar o acervo original de fábrica irá sobrescrever os dados atuais dos 84 livros iniciais no banco de dados, resetando suas avaliações, resenhas e capas personalizadas nesses 84 livros.\n\nTem certeza de que deseja continuar?"
-                    );
-                    if (ok) {
-                      onClose();
-                      onRestoreBaseBooks();
-                    }
-                  }}
-                  className="px-3 py-1.5 text-xs font-semibold bg-white dark:bg-stone-700 text-stone-700 dark:text-stone-200 border border-stone-300 dark:border-stone-600 rounded-xl hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 shadow-xs shrink-0 transition-colors"
-                >
-                  Restaurar
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="pt-3 flex justify-end gap-2 border-t border-stone-100 dark:border-stone-800">
             <button

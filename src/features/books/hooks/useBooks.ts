@@ -10,6 +10,7 @@ import {
   toggleFavoriteInDb,
   createBookInDb,
   updateBookInDb,
+  batchUpdateBooksInDb,
   deleteBookFromDb,
   seedBaseBooksInDb,
 } from '../services/bookService';
@@ -124,8 +125,12 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
       },
       (error) => {
         setIsLoading(false);
-        setErrorNotice('Não foi possível sincronizar os livros. Verifique sua conexão.');
-        handleFirestoreError(error, OperationType.LIST, booksCollectionPath);
+        setErrorNotice('Não foi possível sincronizar os livros no momento. Verifique sua conexão.');
+        try {
+          handleFirestoreError(error, OperationType.LIST, booksCollectionPath);
+        } catch (e) {
+          console.warn('Firestore onSnapshot listener caught:', e);
+        }
       }
     );
 
@@ -241,11 +246,45 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
 
     try {
       setIsSyncing(true);
-      // 2. Persist to Firestore
+      // 2. Persist to Firestore with timeout
       await updateBookInDb(updatedBook);
       // 3. Clear session draft ONLY after database update completes
       clearBookDraft(updatedBook.id);
       showSaveToast('Alterações salvas com sucesso no banco!');
+    } catch (err: any) {
+      console.error('Falha em handleUpdateBook:', err);
+      setErrorNotice('Não foi possível sincronizar com o banco de dados. O rascunho continua seguro na sessão.');
+      throw err;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleBatchUpdateBooks = async (updatedBooksList: Book[]) => {
+    if (updatedBooksList.length === 0) return;
+
+    // 1. Immediately apply all to in-memory state
+    setBooks((prev) => {
+      const map = new Map(updatedBooksList.map((b) => [b.id, b]));
+      return prev.map((b) => (map.has(b.id) ? map.get(b.id)! : b));
+    });
+
+    if (!currentUser || isBypassUser) {
+      updatedBooksList.forEach((b) => clearBookDraft(b.id));
+      showSaveToast(`${updatedBooksList.length} livro(s) alterado(s) na sessão.`);
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+      await batchUpdateBooksInDb(updatedBooksList);
+      // ONLY on success clear drafts from session
+      updatedBooksList.forEach((b) => clearBookDraft(b.id));
+      showSaveToast(`${updatedBooksList.length} livro(s) salvo(s) com sucesso no banco!`);
+    } catch (err: any) {
+      console.error('Falha em handleBatchUpdateBooks:', err);
+      setErrorNotice('Não foi possível salvar todos os livros no banco. Seus rascunhos continuam na sessão.');
+      throw err;
     } finally {
       setIsSyncing(false);
     }
@@ -269,26 +308,6 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
     }
   };
 
-  const handleRestoreBaseBooks = async () => {
-    if (!currentUser || isBypassUser) {
-      setErrorNotice('Faça login com sua conta Google para restaurar livros na nuvem.');
-      return;
-    }
-
-    try {
-      setIsSyncing(true);
-      setSeedNotice('Restaurando os 84 livros no banco de dados...');
-      await seedBaseBooksInDb(currentUser, true);
-      setSeedNotice('Acervo de 84 livros sincronizado com sucesso!');
-      setTimeout(() => setSeedNotice(null), 5000);
-    } catch (err) {
-      console.error('Error restore:', err);
-      setErrorNotice('Erro ao restaurar acervo. Tente novamente.');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   return {
     books,
     isLoading,
@@ -304,7 +323,7 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
     handleToggleFavorite,
     handleAddBook,
     handleUpdateBook,
+    handleBatchUpdateBooks,
     handleDeleteBook,
-    handleRestoreBaseBooks,
   };
 }

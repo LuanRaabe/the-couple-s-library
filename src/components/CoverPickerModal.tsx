@@ -66,6 +66,16 @@ export const CoverPickerModal: React.FC<CoverPickerModalProps> = ({
     }
   }, [isOpen, bookTitle, bookAuthors, bookIsbn]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const filteredCovers = covers.filter((c) => {
@@ -88,16 +98,6 @@ export const CoverPickerModal: React.FC<CoverPickerModalProps> = ({
     e.preventDefault();
     performSearch(searchTerm, searchAuthor, searchIsbn);
   };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
 
   return (
     <div

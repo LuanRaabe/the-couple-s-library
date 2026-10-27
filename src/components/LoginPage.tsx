@@ -119,8 +119,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               <span>Entrar com o Google</span>
             </button>
 
-            <p className="text-[11px] text-stone-400">
-              Autenticação segura via Google Firebase
+            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+              Ao clicar, uma janela/aba do Google é aberta para autenticar sua conta com segurança e retorna automaticamente à estante.
             </p>
           </div>
 

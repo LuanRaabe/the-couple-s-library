@@ -21,6 +21,7 @@ interface BookTableProps {
   onUpdateStatus?: (bookId: string, newStatus: BookStatus) => void;
   onUpdateReader?: (bookId: string, newReader: ReaderId) => void;
   onUpdateBook?: (book: Book) => Promise<void>;
+  onBatchUpdateBooks?: (books: Book[]) => Promise<void>;
   onDeleteBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
 }
@@ -32,6 +33,7 @@ export const BookTable: React.FC<BookTableProps> = ({
   settings,
   onSelectBook,
   onUpdateBook,
+  onBatchUpdateBooks,
   onDeleteBook,
   onToggleFavorite,
 }) => {
@@ -52,6 +54,54 @@ export const BookTable: React.FC<BookTableProps> = ({
 
   const [savingRows, setSavingRows] = useState<Record<string, boolean>>({});
   const [savedSuccessRows, setSavedSuccessRows] = useState<Record<string, boolean>>({});
+  const [isBatchSaving, setIsBatchSaving] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+
+  const draftBookIds = useMemo(() => Object.keys(tableDrafts), [tableDrafts]);
+  const draftCount = draftBookIds.length;
+
+  const handleDiscardAllDrafts = () => {
+    draftBookIds.forEach((id) => clearBookDraft(id));
+    setTableDrafts({});
+    setBatchError(null);
+  };
+
+  const handleSaveAllDrafts = async () => {
+    if (draftCount === 0) return;
+    setIsBatchSaving(true);
+    setBatchError(null);
+
+    try {
+      const mergedBooks: Book[] = [];
+      for (const id of draftBookIds) {
+        const original = books.find((b) => b.id === id);
+        if (original) {
+          mergedBooks.push({
+            ...original,
+            ...tableDrafts[id],
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      if (onBatchUpdateBooks) {
+        await onBatchUpdateBooks(mergedBooks);
+      } else if (onUpdateBook) {
+        for (const book of mergedBooks) {
+          await onUpdateBook(book);
+        }
+      }
+
+      // ONLY on database success, delete all drafts from session
+      draftBookIds.forEach((id) => clearBookDraft(id));
+      setTableDrafts({});
+    } catch (err: any) {
+      console.error('Error saving batch of books:', err);
+      setBatchError('Não foi possível salvar todos os livros no banco. Seus rascunhos continuam na sessão.');
+    } finally {
+      setIsBatchSaving(false);
+    }
+  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -221,13 +271,15 @@ export const BookTable: React.FC<BookTableProps> = ({
               const rowDraft = tableDrafts[book.id];
               const effectiveStatus: BookStatus = rowDraft?.status || book.status;
               const effectiveReader: ReaderId = rowDraft?.assignedReader || book.assignedReader;
+              const effectiveCurrentPage = rowDraft?.currentPage !== undefined ? rowDraft.currentPage : (book.currentPage || 0);
+              const effectivePageCount = rowDraft?.pageCount !== undefined ? rowDraft.pageCount : (book.pageCount || 0);
               const hasDraft = !!rowDraft || hasBookDraft(book.id);
               const isSavingThisRow = !!savingRows[book.id];
               const isSavedSuccess = !!savedSuccessRows[book.id];
 
               const readerBadge = getReaderBadge(effectiveReader, settings.eleName, settings.elaName);
               const statusColor = STATUS_COLORS[effectiveStatus] || STATUS_COLORS.quero_ler;
-              const progress = calculateProgress(book.currentPage, book.pageCount);
+              const progress = calculateProgress(effectiveCurrentPage, effectivePageCount);
               const recCount = book.recommendations?.length || 0;
 
               return (
@@ -349,20 +401,35 @@ export const BookTable: React.FC<BookTableProps> = ({
                     </div>
                   </td>
 
-                  {/* Progress */}
-                  <td className="py-3 px-4 min-w-[140px]">
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-xs">
-                        <span className="font-semibold text-stone-700 dark:text-stone-300">
+                  {/* Progress with inline quick-edit */}
+                  <td className="py-3 px-4 min-w-[150px]">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="0"
+                            max={effectivePageCount > 0 ? effectivePageCount : 9999}
+                            value={effectiveCurrentPage}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value) || 0);
+                              handleRowFieldChange(book.id, {
+                                currentPage: val,
+                                ...(val >= effectivePageCount && effectivePageCount > 0 ? { status: 'lido' } : {})
+                              });
+                            }}
+                            className="w-14 px-1 py-0.5 text-xs text-stone-800 dark:text-stone-200 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-md font-mono text-center focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                            title="Editar página atual (Salva como rascunho na sessão)"
+                          />
+                          <span className="text-stone-400 text-[11px]">/ {effectivePageCount || '?'}</span>
+                        </div>
+                        <span className="font-semibold text-stone-600 dark:text-stone-400 text-[11px]">
                           {progress}%
-                        </span>
-                        <span className="text-[11px] text-stone-400">
-                          {book.currentPage || 0}/{book.pageCount || '?'} pág.
                         </span>
                       </div>
                       <div className="w-full bg-stone-200 dark:bg-stone-700 rounded-full h-1.5 overflow-hidden">
                         <div
-                          className="bg-amber-600 h-1.5 rounded-full"
+                          className="bg-amber-600 h-1.5 rounded-full transition-all"
                           style={{ width: `${progress}%` }}
                         />
                       </div>
@@ -467,6 +534,64 @@ export const BookTable: React.FC<BookTableProps> = ({
           </tbody>
         </table>
       </div>
+
+      {/* Floating Sticky Batch Save Bar (fixed on scroll so it's always accessible) */}
+      {draftCount > 0 && (
+        <div className="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-8 sm:max-w-xl z-50 bg-stone-900/95 dark:bg-stone-850/95 backdrop-blur-md text-stone-100 p-4 rounded-2xl shadow-2xl border border-amber-500/40 flex flex-col sm:flex-row items-center justify-between gap-3 animate-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center font-bold text-sm shrink-0 shadow-md">
+              {draftCount}
+            </div>
+            <div>
+              <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                <span>{draftCount === 1 ? '1 livro com alteração pendente' : `${draftCount} livros com alterações pendentes`}</span>
+                <span className="text-[10px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded font-mono">
+                  Sessão
+                </span>
+              </p>
+              <p className="text-[11px] text-stone-300">
+                Alterações salvas na sessão. Salve para persistir no banco.
+              </p>
+              {batchError && (
+                <p className="text-[11px] text-rose-300 mt-0.5 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  <span>{batchError}</span>
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+            <button
+              type="button"
+              onClick={handleDiscardAllDrafts}
+              disabled={isBatchSaving}
+              className="px-2.5 py-1.5 text-xs font-semibold text-stone-300 hover:text-white hover:bg-stone-800 rounded-lg transition-colors cursor-pointer"
+            >
+              Descartar
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveAllDrafts}
+              disabled={isBatchSaving}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-emerald-950/40 transition-all cursor-pointer disabled:opacity-50"
+            >
+              {isBatchSaving ? (
+                <>
+                  <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Salvando ({draftCount})...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Salvar Todas as Alterações ({draftCount})</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

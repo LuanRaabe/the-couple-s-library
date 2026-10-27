@@ -14,6 +14,7 @@ import { useBooks, useBookFilters, useBackgroundCoverSync, Book } from './featur
 // Shared Components
 import { Header } from './shared/components/Header';
 import { NavigationFilterBar, ActiveTab } from './shared/components/NavigationFilterBar';
+import { NavigationSidebar } from './shared/components/NavigationSidebar';
 import { NotificationToast } from './shared/components/NotificationToast';
 
 // Feature Views, Modals & Gate Screens
@@ -63,8 +64,8 @@ export default function App() {
     handleToggleFavorite,
     handleAddBook,
     handleUpdateBook,
+    handleBatchUpdateBooks,
     handleDeleteBook,
-    handleRestoreBaseBooks,
   } = useBooks(currentUser, dbTargetTrigger);
 
   // Books search & filtering slice
@@ -79,15 +80,35 @@ export default function App() {
     readCount,
   } = useBookFilters(books);
 
-  // Navigation tab
-  const [currentTab, setCurrentTab] = useState<ActiveTab>('grid');
+  // Navigation tab persisted across reloads in localStorage
+  const [currentTab, setCurrentTab] = useState<ActiveTab>(() => {
+    try {
+      const saved = localStorage.getItem('nossa_estante_active_tab');
+      if (saved && ['grid', 'table', 'kanban', 'recommendations', 'stats'].includes(saved)) {
+        return saved as ActiveTab;
+      }
+    } catch {
+      // ignore
+    }
+    return 'grid';
+  });
+
+  const handleSelectTab = (tab: ActiveTab) => {
+    setCurrentTab(tab);
+    try {
+      localStorage.setItem('nossa_estante_active_tab', tab);
+    } catch {
+      // ignore
+    }
+  };
 
   // Reader context for detail modal annotations/sessions
   const [activeReader, setActiveReader] = useState<'ele' | 'ela'>(() => {
     return (localStorage.getItem('nossa_estante_active_reader') as 'ele' | 'ela') || 'ele';
   });
 
-  // Modal states
+  // Modal & Sidebar states
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSyncCoversModalOpen, setIsSyncCoversModalOpen] = useState(false);
@@ -137,13 +158,14 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#faf8f5] dark:bg-stone-950 text-stone-800 dark:text-stone-200 flex flex-col font-sans selection:bg-amber-200 dark:selection:bg-amber-900 selection:text-amber-950">
       
-      {/* Header */}
+      {/* Header with Lateral Sanduíche Button */}
       <Header
         settings={settings}
         currentUser={currentUser}
         onLogin={loginWithGoogle}
         onLogout={logoutUser}
         onOpenAddModal={() => setIsAddModalOpen(true)}
+        onOpenSidebar={() => setIsSidebarOpen(true)}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
         onOpenSyncCoversModal={() => setIsSyncCoversModalOpen(true)}
         totalBooks={books.length}
@@ -166,10 +188,10 @@ export default function App() {
           onCloseErrorNotice={() => setErrorNotice(null)}
         />
 
-        {/* Navigation Tabs and Search/Filter Bar */}
+        {/* Navigation Filter Bar */}
         <NavigationFilterBar
           currentTab={currentTab}
-          onSelectTab={setCurrentTab}
+          onOpenSidebar={() => setIsSidebarOpen(true)}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           readerFilter={readerFilter}
@@ -207,6 +229,7 @@ export default function App() {
                 onUpdateStatus={handleUpdateStatus}
                 onUpdateReader={handleUpdateReader}
                 onUpdateBook={handleUpdateBook}
+                onBatchUpdateBooks={handleBatchUpdateBooks}
                 onDeleteBook={handleDeleteBook}
                 onToggleFavorite={handleToggleFavorite}
               />
@@ -251,45 +274,69 @@ export default function App() {
         </p>
       </footer>
 
-      {/* Modals */}
-      <AddBookModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onAddBook={handleAddBook}
+      {/* Lateral Navigation Sidebar (Desktop drawer / Mobile tab selection modal) */}
+      <NavigationSidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        currentTab={currentTab}
+        onSelectTab={handleSelectTab}
         settings={settings}
-        activeReader={activeReader}
+        totalBooks={books.length}
+        readCount={readCount}
+        currentUser={currentUser}
+        onOpenAddModal={() => setIsAddModalOpen(true)}
+        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+        onOpenSyncCoversModal={() => setIsSyncCoversModalOpen(true)}
+        onOpenDebugMenu={() => setIsDebugMenuOpen(true)}
+        onLogout={logoutUser}
       />
 
-      <BookDetailModal
-        book={selectedBook}
-        isOpen={!!selectedBook}
-        onClose={() => setSelectedBook(null)}
-        settings={settings}
-        activeReader={activeReader}
-        onUpdateBook={handleUpdateBook}
-        onDeleteBook={handleDeleteBook}
-      />
+      {/* Modals - Conditionally rendered to guarantee constant hooks and clean unmounting */}
+      {isAddModalOpen && (
+        <AddBookModal
+          isOpen={true}
+          onClose={() => setIsAddModalOpen(false)}
+          onAddBook={handleAddBook}
+          settings={settings}
+          activeReader={activeReader}
+        />
+      )}
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        settings={settings}
-        onSaveSettings={saveSettings}
-        onRestoreBaseBooks={handleRestoreBaseBooks}
-      />
+      {selectedBook && (
+        <BookDetailModal
+          book={selectedBook}
+          isOpen={true}
+          onClose={() => setSelectedBook(null)}
+          settings={settings}
+          activeReader={activeReader}
+          onUpdateBook={handleUpdateBook}
+          onDeleteBook={handleDeleteBook}
+        />
+      )}
 
-      <BatchCoverSyncModal
-        isOpen={isSyncCoversModalOpen}
-        onClose={() => setIsSyncCoversModalOpen(false)}
-        syncState={coverSync}
-        books={books}
-        onUpdateBook={handleUpdateBook}
-        onSyncCompleted={(updated) => {
-          if (updated > 0) {
-            setSaveNotice(`🎉 Sincronização em 2º plano concluída: ${updated} capa(s) atualizada(s)!`);
-          }
-        }}
-      />
+      {isSettingsModalOpen && (
+        <SettingsModal
+          isOpen={true}
+          onClose={() => setIsSettingsModalOpen(false)}
+          settings={settings}
+          onSaveSettings={saveSettings}
+        />
+      )}
+
+      {isSyncCoversModalOpen && (
+        <BatchCoverSyncModal
+          isOpen={true}
+          onClose={() => setIsSyncCoversModalOpen(false)}
+          syncState={coverSync}
+          books={books}
+          onUpdateBook={handleUpdateBook}
+          onSyncCompleted={(updated) => {
+            if (updated > 0) {
+              setSaveNotice(`🎉 Sincronização em 2º plano concluída: ${updated} capa(s) atualizada(s)!`);
+            }
+          }}
+        />
+      )}
 
       {/* Background Floating Status Widget */}
       <BackgroundSyncFloatingWidget
@@ -303,14 +350,16 @@ export default function App() {
       />
 
       {/* Debug and Maintenance Menu */}
-      <DebugMenu
-        isOpen={isDebugMenuOpen}
-        onClose={() => setIsDebugMenuOpen(false)}
-        isMaintenanceMode={isMaintenanceMode}
-        onEnableMaintenance={enableMaintenanceBypass}
-        onDisableMaintenance={disableMaintenanceBypass}
-        onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
-      />
+      {isDebugMenuOpen && (
+        <DebugMenu
+          isOpen={true}
+          onClose={() => setIsDebugMenuOpen(false)}
+          isMaintenanceMode={isMaintenanceMode}
+          onEnableMaintenance={enableMaintenanceBypass}
+          onDisableMaintenance={disableMaintenanceBypass}
+          onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
+        />
+      )}
 
     </div>
   );

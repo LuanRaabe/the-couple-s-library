@@ -12,21 +12,50 @@ import { USER_INITIAL_BOOKS } from '../../../data/userBooks';
 import { getDbTarget, getSettingsCollection } from '../../../utils/envHelper';
 
 /**
- * Sanitizes object data for Firestore by removing any `undefined` keys
- * which cause runtime errors in Firebase SDK.
+ * Timeout wrapper to guarantee Firestore calls never hang the UI indefinitely.
  */
-function sanitizeForFirestore(data: Record<string, any>): Record<string, any> {
-  const result: Record<string, any> = {};
-  for (const [key, val] of Object.entries(data)) {
-    if (val !== undefined) {
-      if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+export async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs = 8000,
+  errorMsg = 'Tempo limite excedido ao comunicar com o servidor Firestore.'
+): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(errorMsg));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Recursively sanitizes object data for Firestore by removing any `undefined` keys
+ * inside objects or nested arrays, avoiding "Unsupported field value: undefined" errors.
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined || data === null) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object' && !(data instanceof Date)) {
+    const result: Record<string, any> = {};
+    for (const [key, val] of Object.entries(data)) {
+      if (val !== undefined) {
         result[key] = sanitizeForFirestore(val);
-      } else {
-        result[key] = val;
       }
     }
+    return result as T;
   }
-  return result;
+  return data;
 }
 
 export async function updateBookStatusInDb(bookId: string, newStatus: BookStatus, book?: Book) {
@@ -37,6 +66,11 @@ export async function updateBookStatusInDb(bookId: string, newStatus: BookStatus
     const isNowFinished = newStatus === 'lido';
 
     const payload = sanitizeForFirestore({
+      ...(book ? {
+        title: book.title,
+        authors: book.authors || '',
+        assignedReader: book.assignedReader || 'ambos',
+      } : {}),
       status: newStatus,
       dateStarted: newStatus === 'lendo' && (!book || !book.dateStarted) ? new Date().toISOString().split('T')[0] : (book?.dateStarted || null),
       dateFinished: isNowFinished ? (book?.dateFinished || new Date().toISOString().split('T')[0]) : (book?.dateFinished || null),
@@ -44,22 +78,26 @@ export async function updateBookStatusInDb(bookId: string, newStatus: BookStatus
       updatedAt: new Date().toISOString(),
     });
 
-    await setDoc(bookRef, payload, { merge: true });
+    await withTimeout(setDoc(bookRef, payload, { merge: true }), 8000);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
-export async function updateBookReaderInDb(bookId: string, newReader: ReaderId) {
+export async function updateBookReaderInDb(bookId: string, newReader: ReaderId, book?: Book) {
   const collectionName = getDbTarget();
   const path = `${collectionName}/${bookId}`;
   try {
     const bookRef = doc(db, collectionName, bookId);
     const payload = sanitizeForFirestore({
+      ...(book ? {
+        title: book.title,
+        status: book.status || 'quero_ler',
+      } : {}),
       assignedReader: newReader,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(bookRef, payload, { merge: true });
+    await withTimeout(setDoc(bookRef, payload, { merge: true }), 8000);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -74,7 +112,7 @@ export async function toggleFavoriteInDb(bookId: string, newFavorite: boolean) {
       favorite: newFavorite,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(bookRef, payload, { merge: true });
+    await withTimeout(setDoc(bookRef, payload, { merge: true }), 8000);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -90,7 +128,7 @@ export async function createBookInDb(docId: string, bookData: Omit<Book, 'id'>, 
       createdBy: userId,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(bookRef, payload);
+    await withTimeout(setDoc(bookRef, payload), 8000);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -104,12 +142,38 @@ export async function updateBookInDb(updatedBook: Book) {
     const { id, ...dataToSave } = updatedBook;
     const payload = sanitizeForFirestore({
       ...dataToSave,
+      title: updatedBook.title || 'Sem Título',
+      status: updatedBook.status || 'quero_ler',
+      assignedReader: updatedBook.assignedReader || 'ambos',
       updatedAt: new Date().toISOString(),
     });
-    // Use setDoc with merge: true for rock-solid reliability across dev, preview and prod
-    await setDoc(bookRef, payload, { merge: true });
+    // withTimeout prevents any infinite hanging
+    await withTimeout(setDoc(bookRef, payload, { merge: true }), 8000);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function batchUpdateBooksInDb(updatedBooks: Book[]) {
+  if (updatedBooks.length === 0) return;
+  const collectionName = getDbTarget();
+  try {
+    const batch = writeBatch(db);
+    for (const book of updatedBooks) {
+      const bookRef = doc(db, collectionName, book.id);
+      const { id, ...dataToSave } = book;
+      const payload = sanitizeForFirestore({
+        ...dataToSave,
+        title: book.title || 'Sem Título',
+        status: book.status || 'quero_ler',
+        assignedReader: book.assignedReader || 'ambos',
+        updatedAt: new Date().toISOString(),
+      });
+      batch.set(bookRef, payload, { merge: true });
+    }
+    await withTimeout(batch.commit(), 10000);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, collectionName);
   }
 }
 
@@ -117,7 +181,7 @@ export async function deleteBookFromDb(bookId: string) {
   const collectionName = getDbTarget();
   const path = `${collectionName}/${bookId}`;
   try {
-    await deleteDoc(doc(db, collectionName, bookId));
+    await withTimeout(deleteDoc(doc(db, collectionName, bookId)), 8000);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
@@ -175,5 +239,5 @@ export async function seedBaseBooksInDb(user: FirebaseUser, merge = true) {
     { merge: true }
   );
 
-  await batch.commit();
+  await withTimeout(batch.commit(), 12000, 'Tempo limite ao inicializar acervo base no Firestore.');
 }
