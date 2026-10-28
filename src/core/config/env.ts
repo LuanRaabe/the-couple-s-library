@@ -14,7 +14,6 @@ export function isDevOrPreview(): boolean {
     host === '127.0.0.1' ||
     host.includes('ais-dev') ||
     host.includes('ais-pre') ||
-    host.includes('run.app') ||
     import.meta.env.DEV
   );
 }

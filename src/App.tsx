@@ -323,7 +323,6 @@ export default function App() {
           onClose={() => setIsSettingsModalOpen(false)}
           settings={settings}
           onSaveSettings={saveSettings}
-          onSyncProductionSpreadsheet={handleSyncProductionSpreadsheet}
         />
       )}
 
