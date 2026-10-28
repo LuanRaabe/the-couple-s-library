@@ -135,7 +135,9 @@ export const BookKanban: React.FC<BookKanbanProps> = ({
       {/* Linear Board Columns Container */}
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3.5 items-start">
         {LINEAR_COLUMNS.map((col) => {
-          const columnBooks = books.filter((b) => b.status === col.status);
+          const columnBooks = books
+            .filter((b) => b.status === col.status)
+            .sort((a, b) => (a.title || '').localeCompare(b.title || '', 'pt-BR', { sensitivity: 'base' }));
           const isTargeted = activeDropColumn === col.status;
 
           return (

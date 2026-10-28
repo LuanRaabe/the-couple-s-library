@@ -7,12 +7,12 @@ export function useBookFilters(books: Book[]) {
   const [statusFilter, setStatusFilter] = useState<'todos' | BookStatus>('todos');
 
   const filteredBooks = useMemo(() => {
-    return books.filter((book) => {
+    const filtered = books.filter((book) => {
       // Search Query
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
-        const matchesTitle = book.title.toLowerCase().includes(query);
-        const matchesAuthor = book.authors.toLowerCase().includes(query);
+        const matchesTitle = (book.title || '').toLowerCase().includes(query);
+        const matchesAuthor = (book.authors || '').toLowerCase().includes(query);
         const matchesCategory = book.categories?.some((c) => c.toLowerCase().includes(query));
         if (!matchesTitle && !matchesAuthor && !matchesCategory) return false;
       }
@@ -31,6 +31,11 @@ export function useBookFilters(books: Book[]) {
 
       return true;
     });
+
+    // Enforce alphabetical sorting A-Z in all views
+    return filtered.sort((a, b) =>
+      (a.title || '').localeCompare(b.title || '', 'pt-BR', { sensitivity: 'base' })
+    );
   }, [books, searchQuery, readerFilter, statusFilter]);
 
   const readCount = useMemo(() => books.filter((b) => b.status === 'lido').length, [books]);

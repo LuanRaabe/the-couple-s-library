@@ -29,6 +29,7 @@ import { AddBookModal } from '@/components/AddBookModal';
 import { BookDetailModal } from '@/components/BookDetailModal';
 import { BatchCoverSyncModal } from '@/components/BatchCoverSyncModal';
 import { BackgroundSyncFloatingWidget } from '@/components/BackgroundSyncFloatingWidget';
+import { FloatingBatchSaveBar } from '@/shared/components/FloatingBatchSaveBar';
 
 export default function App() {
   // Auth feature slice with maintenance bypass capability
@@ -364,6 +365,13 @@ export default function App() {
           onSyncProductionSpreadsheet={handleSyncProductionSpreadsheet}
         />
       )}
+
+      {/* Global Floating Batch Save Bar (reliably visible across all views whenever any book is edited) */}
+      <FloatingBatchSaveBar
+        books={books}
+        onBatchUpdateBooks={handleBatchUpdateBooks}
+        onUpdateBook={handleUpdateBook}
+      />
 
     </div>
   );

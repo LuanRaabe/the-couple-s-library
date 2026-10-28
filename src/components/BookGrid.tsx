@@ -2,6 +2,7 @@ import React from 'react';
 import { Star, Heart, BookOpen, MessageSquareHeart, RotateCcw } from 'lucide-react';
 import { Book, BookStatus, LibrarySettings } from '@/features/books';
 import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '@/utils/bookHelpers';
+import { useSessionDrafts } from '@/core/session/draft';
 
 interface BookGridProps {
   books: Book[];
@@ -18,6 +19,8 @@ export const BookGrid: React.FC<BookGridProps> = ({
   onUpdateStatus,
   onToggleFavorite,
 }) => {
+  const { hasDraft, getDraft } = useSessionDrafts();
+
   if (books.length === 0) {
     return (
       <div className="text-center py-20 px-4 bg-white/60 dark:bg-stone-900/60 rounded-3xl border border-stone-200 dark:border-stone-800">
@@ -35,23 +38,38 @@ export const BookGrid: React.FC<BookGridProps> = ({
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-6">
       {books.map((book) => {
-        const readerBadge = getReaderBadge(book.assignedReader, settings.eleName, settings.elaName);
-        const statusColor = STATUS_COLORS[book.status] || STATUS_COLORS.quero_ler;
-        const progress = calculateProgress(book.currentPage, book.pageCount);
-        const hasRecs = book.recommendations && book.recommendations.length > 0;
+        const draft = getDraft(book.id);
+        const effectiveBook = draft ? { ...book, ...draft } : book;
+        const isDrafted = hasDraft(book.id);
+
+        const readerBadge = getReaderBadge(effectiveBook.assignedReader, settings.eleName, settings.elaName);
+        const statusColor = STATUS_COLORS[effectiveBook.status] || STATUS_COLORS.quero_ler;
+        const progress = calculateProgress(effectiveBook.currentPage, effectiveBook.pageCount);
+        const hasRecs = effectiveBook.recommendations && effectiveBook.recommendations.length > 0;
 
         return (
           <div
             key={book.id}
-            className="group relative flex flex-col bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm hover:shadow-xl hover:border-amber-400/60 dark:hover:border-amber-600/60 transition-all duration-200 overflow-hidden"
+            className={`group relative flex flex-col bg-white dark:bg-stone-900 rounded-2xl border transition-all duration-200 overflow-hidden ${
+              isDrafted
+                ? 'border-amber-400 dark:border-amber-600 shadow-md ring-1 ring-amber-400/30'
+                : 'border-stone-200 dark:border-stone-800 shadow-sm hover:shadow-xl hover:border-amber-400/60 dark:hover:border-amber-600/60'
+            }`}
           >
             {/* Top Badges */}
             <div className="absolute top-2.5 inset-x-2.5 z-10 flex items-center justify-between pointer-events-none">
-              <span
-                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur-md shadow-xs border ${readerBadge.bg} ${readerBadge.text} ${readerBadge.border}`}
-              >
-                {readerBadge.label}
-              </span>
+              <div className="flex items-center gap-1">
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur-md shadow-xs border ${readerBadge.bg} ${readerBadge.text} ${readerBadge.border}`}
+                >
+                  {readerBadge.label}
+                </span>
+                {isDrafted && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500 text-stone-950 shadow-xs">
+                    Rascunho
+                  </span>
+                )}
+              </div>
 
               <button
                 type="button"

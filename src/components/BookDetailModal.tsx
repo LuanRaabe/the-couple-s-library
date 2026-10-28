@@ -509,6 +509,34 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
           </div>
         )}
 
+        {/* Pending Draft Notice inside Modal */}
+        {hasDraftInSession && !saveSuccessNotice && (
+          <div className="px-4 sm:px-6 py-2.5 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 text-xs font-medium flex items-center justify-between gap-3 border-b border-amber-200 dark:border-amber-800 animate-in fade-in">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0" />
+              <span className="truncate">Você possui alterações pendentes neste livro salvas na sessão.</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleDiscardDraft}
+                className="text-[11px] text-stone-500 hover:text-stone-700 dark:hover:text-stone-300 underline cursor-pointer"
+              >
+                Descartar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAllToDatabase}
+                disabled={isSaving}
+                className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold shadow-xs cursor-pointer flex items-center gap-1"
+              >
+                <Save className="w-3 h-3" />
+                <span>{isSaving ? 'Salvando...' : 'Salvar no Banco'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Success toast if recently saved */}
         {saveSuccessNotice && (
           <div className="px-4 sm:px-6 py-2 bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 text-xs font-semibold flex items-center gap-2 border-b border-emerald-200 dark:border-emerald-800 animate-in fade-in">

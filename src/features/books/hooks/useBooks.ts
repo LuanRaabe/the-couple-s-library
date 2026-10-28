@@ -20,12 +20,19 @@ import {
 import { getDbTarget } from '@/core/config/env';
 import { clearBookDraft } from '@/core/session/draft';
 
+/**
+ * Compares two books alphabetically by title according to Brazilian Portuguese collation.
+ */
+export function sortBooksAlphabetically(a: Book, b: Book): number {
+  return (a.title || '').localeCompare(b.title || '', 'pt-BR', { sensitivity: 'base' });
+}
+
 export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: number) {
   const [books, setBooks] = useState<Book[]>(() => {
     return USER_INITIAL_BOOKS.map((b, idx) => ({
       ...b,
       id: `book_${(b as any).originalId || idx + 1}`,
-    }));
+    })).sort(sortBooksAlphabetically);
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -52,7 +59,7 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
         USER_INITIAL_BOOKS.map((b, idx) => ({
           ...b,
           id: `book_${(b as any).originalId || idx + 1}`,
-        }))
+        })).sort(sortBooksAlphabetically)
       );
       return;
     }
@@ -114,13 +121,8 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
           });
         });
 
-        // Sort naturally by book number
-        loadedBooks.sort((a, b) => {
-          const aNum = parseInt(a.id.replace('book_', ''), 10);
-          const bNum = parseInt(b.id.replace('book_', ''), 10);
-          if (!isNaN(aNum) && !isNaN(bNum)) return aNum - bNum;
-          return a.title.localeCompare(b.title);
-        });
+        // Always sort strictly alphabetically A-Z
+        loadedBooks.sort(sortBooksAlphabetically);
 
         setBooks(loadedBooks);
         setIsLoading(false);
@@ -221,7 +223,8 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
       updatedAt: new Date().toISOString(),
     };
 
-    setBooks((prev) => [newBook, ...prev]);
+    // Add and immediately sort in alphabetical order A-Z
+    setBooks((prev) => [...prev, newBook].sort(sortBooksAlphabetically));
 
     if (!currentUser || isBypassUser) {
       showSaveToast('Livro adicionado na sessão.');
@@ -238,8 +241,12 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
   };
 
   const handleUpdateBook = async (updatedBook: Book) => {
-    // 1. Immediately apply to in-memory state
-    setBooks((prev) => prev.map((b) => (b.id === updatedBook.id ? updatedBook : b)));
+    // 1. Immediately apply to in-memory state and maintain alphabetical order
+    setBooks((prev) =>
+      prev
+        .map((b) => (b.id === updatedBook.id ? updatedBook : b))
+        .sort(sortBooksAlphabetically)
+    );
 
     if (!currentUser || isBypassUser) {
       clearBookDraft(updatedBook.id);
@@ -271,10 +278,12 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
       return { success: true, savedCount: 0, totalCount: 0, failedBookIds: [], errors: [] };
     }
 
-    // 1. Immediately apply to in-memory state
+    // 1. Immediately apply all to in-memory state and keep alphabetical
     setBooks((prev) => {
       const map = new Map(updatedBooksList.map((b) => [b.id, b]));
-      return prev.map((b) => (map.has(b.id) ? map.get(b.id)! : b));
+      return prev
+        .map((b) => (map.has(b.id) ? map.get(b.id)! : b))
+        .sort(sortBooksAlphabetically);
     });
 
     if (!currentUser || isBypassUser) {
