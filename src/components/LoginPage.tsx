@@ -1,6 +1,6 @@
 import React from 'react';
 import { BookOpen, Heart, Sparkles, Star, Wrench, ShieldAlert } from 'lucide-react';
-import { isDevOrPreview, getDbTarget } from '../utils/envHelper';
+import { isDevOrPreview, getDbTarget } from '@/core/config/env';
 
 interface LoginPageProps {
   onLogin: () => Promise<any>;

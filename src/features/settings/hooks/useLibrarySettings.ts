@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
-import { db, handleFirestoreError, OperationType } from '../../../firebase';
+import { db, handleFirestoreError, withTimeout, sanitizeForFirestore, OperationType } from '@/core/firebase';
 import { LibrarySettings } from '../types';
-import { getSettingsCollection } from '../../../utils/envHelper';
+import { getSettingsCollection } from '@/core/config/env';
 
 const DEFAULT_SETTINGS: LibrarySettings = {
   eleName: 'Luan',
@@ -48,18 +48,19 @@ export function useLibrarySettings(currentUser: FirebaseUser | null, onNotify?: 
     setSettings(newSettings);
 
     if (!currentUser) {
-      if (onNotify) onNotify('Configurações salvas localmente. Entre com o Google para sincronizar com seu parceiro.');
+      if (onNotify) onNotify('Configurações salvas localmente.');
       return;
     }
 
     const settingsCollection = getSettingsCollection();
     const path = `${settingsCollection}/couple`;
     try {
-      await setDoc(doc(db, settingsCollection, 'couple'), {
+      const payload = sanitizeForFirestore({
         ...newSettings,
         updatedBy: currentUser.uid,
         updatedAt: new Date().toISOString(),
-      }, { merge: true });
+      });
+      await withTimeout(setDoc(doc(db, settingsCollection, 'couple'), payload, { merge: true }), 9000);
       if (onNotify) onNotify('Configurações do casal salvas com sucesso no banco!');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);

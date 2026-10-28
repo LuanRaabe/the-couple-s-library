@@ -1,6 +1,6 @@
 import React from 'react';
 import { Heart, MessageSquareHeart, Sparkles, BookOpen, ArrowRight, UserCheck } from 'lucide-react';
-import { Book, LibrarySettings } from '../types/book';
+import { Book, LibrarySettings } from '@/features/books';
 
 interface RecommendationsViewProps {
   books: Book[];

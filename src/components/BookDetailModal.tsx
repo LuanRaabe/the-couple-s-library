@@ -15,12 +15,12 @@ import {
   Undo2,
   AlertCircle
 } from 'lucide-react';
-import { Book, BookStatus, ReaderId, LibrarySettings, ReadingLog, BookRecommendation, ReadPeriod } from '../types/book';
-import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, MONTH_NAMES, formatReadPeriod, calculateReadCount } from '../utils/bookHelpers';
-import { fetchCoverForBook } from '../services/googleBooks';
-import { compressImageFile } from '../utils/imageCompressor';
+import { Book, BookStatus, ReaderId, LibrarySettings, ReadingLog, BookRecommendation, ReadPeriod } from '@/features/books';
+import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, MONTH_NAMES, formatReadPeriod, calculateReadCount } from '@/utils/bookHelpers';
+import { fetchCoverForBook } from '@/features/books';
+import { compressImageFile } from '@/utils/imageCompressor';
 import { CoverPickerModal } from './CoverPickerModal';
-import { getBookDraft, saveBookDraft, clearBookDraft, hasBookDraft } from '../utils/sessionDraft';
+import { getBookDraft, saveBookDraft, clearBookDraft, hasBookDraft } from '@/core/session/draft';
 
 interface BookDetailModalProps {
   book: Book | null;

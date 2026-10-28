@@ -1,7 +1,7 @@
 import React from 'react';
 import { Star, Heart, BookOpen, MessageSquareHeart, RotateCcw } from 'lucide-react';
-import { Book, BookStatus, LibrarySettings } from '../types/book';
-import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '../utils/bookHelpers';
+import { Book, BookStatus, LibrarySettings } from '@/features/books';
+import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '@/utils/bookHelpers';
 
 interface BookGridProps {
   books: Book[];

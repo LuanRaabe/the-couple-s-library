@@ -8,11 +8,12 @@ import {
   Save,
   Undo2,
   Check,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
-import { Book, BookStatus, ReaderId, LibrarySettings } from '../types/book';
-import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '../utils/bookHelpers';
-import { getBookDraft, saveBookDraft, clearBookDraft, hasBookDraft } from '../utils/sessionDraft';
+import { Book, BookStatus, ReaderId, LibrarySettings, BatchSaveResult, BatchProgressCallback } from '@/features/books';
+import { STATUS_LABELS, STATUS_COLORS, getReaderBadge, calculateProgress, calculateReadCount } from '@/utils/bookHelpers';
+import { getBookDraft, saveBookDraft, clearBookDraft, hasBookDraft } from '@/core/session/draft';
 
 interface BookTableProps {
   books: Book[];
@@ -21,7 +22,7 @@ interface BookTableProps {
   onUpdateStatus?: (bookId: string, newStatus: BookStatus) => void;
   onUpdateReader?: (bookId: string, newReader: ReaderId) => void;
   onUpdateBook?: (book: Book) => Promise<void>;
-  onBatchUpdateBooks?: (books: Book[]) => Promise<void>;
+  onBatchUpdateBooks?: (books: Book[], onProgress?: BatchProgressCallback) => Promise<BatchSaveResult | void>;
   onDeleteBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
 }
@@ -57,6 +58,16 @@ export const BookTable: React.FC<BookTableProps> = ({
   const [isBatchSaving, setIsBatchSaving] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
 
+  // Real-time batch progress state
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{
+    completed: number;
+    total: number;
+    currentTitle: string;
+    percent: number;
+  }>({ completed: 0, total: 0, currentTitle: '', percent: 0 });
+  const [batchSaveDone, setBatchSaveDone] = useState(false);
+
   const draftBookIds = useMemo(() => Object.keys(tableDrafts), [tableDrafts]);
   const draftCount = draftBookIds.length;
 
@@ -70,6 +81,14 @@ export const BookTable: React.FC<BookTableProps> = ({
     if (draftCount === 0) return;
     setIsBatchSaving(true);
     setBatchError(null);
+    setBatchSaveDone(false);
+    setBatchModalOpen(true);
+    setBatchProgress({
+      completed: 0,
+      total: draftCount,
+      currentTitle: 'Iniciando atualização dos livros...',
+      percent: 0,
+    });
 
     try {
       const mergedBooks: Book[] = [];
@@ -84,21 +103,55 @@ export const BookTable: React.FC<BookTableProps> = ({
         }
       }
 
+      const onProgressHandler: BatchProgressCallback = (completed, total, currentTitle) => {
+        setBatchProgress({
+          completed,
+          total,
+          currentTitle: currentTitle || '',
+          percent: total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0,
+        });
+      };
+
       if (onBatchUpdateBooks) {
-        await onBatchUpdateBooks(mergedBooks);
+        const res = await onBatchUpdateBooks(mergedBooks, onProgressHandler);
+        if (res && !res.success) {
+          // Keep only failed drafts in state
+          const failedSet = new Set(res.failedBookIds);
+          setTableDrafts((prev) => {
+            const next: Record<string, Partial<Book>> = {};
+            for (const [id, val] of Object.entries(prev)) {
+              if (failedSet.has(id)) {
+                next[id] = val;
+              }
+            }
+            return next;
+          });
+          setBatchError(`${res.savedCount} salvos, mas ${res.failedBookIds.length} livro(s) falharam.`);
+          setIsBatchSaving(false);
+          return;
+        }
       } else if (onUpdateBook) {
+        let count = 0;
         for (const book of mergedBooks) {
+          onProgressHandler(count, mergedBooks.length, book.title);
           await onUpdateBook(book);
+          count++;
+          onProgressHandler(count, mergedBooks.length, book.title);
         }
       }
 
       // ONLY on database success, delete all drafts from session
       draftBookIds.forEach((id) => clearBookDraft(id));
       setTableDrafts({});
+      setBatchSaveDone(true);
+
+      setTimeout(() => {
+        setBatchModalOpen(false);
+        setIsBatchSaving(false);
+      }, 1400);
     } catch (err: any) {
       console.error('Error saving batch of books:', err);
-      setBatchError('Não foi possível salvar todos os livros no banco. Seus rascunhos continuam na sessão.');
-    } finally {
+      setBatchError('Não foi possível salvar todos os livros no banco. Seus rascunhos continuam seguros na sessão.');
       setIsBatchSaving(false);
     }
   };
@@ -213,7 +266,7 @@ export const BookTable: React.FC<BookTableProps> = ({
           Nenhum livro encontrado
         </h3>
         <p className="text-sm text-stone-500 dark:text-stone-400 mt-1 max-w-md mx-auto">
-          Adicione um livro buscando no Google Livros ou usando os exemplos recomendados!
+          Adicione um livro buscando no catálogo ou verifique os filtros ativos!
         </p>
       </div>
     );
@@ -550,7 +603,7 @@ export const BookTable: React.FC<BookTableProps> = ({
                 </span>
               </p>
               <p className="text-[11px] text-stone-300">
-                Alterações salvas na sessão. Salve para persistir no banco.
+                Alterações salvas na sessão. Salve para persistir no banco de dados.
               </p>
               {batchError && (
                 <p className="text-[11px] text-rose-300 mt-0.5 flex items-center gap-1">
@@ -577,18 +630,108 @@ export const BookTable: React.FC<BookTableProps> = ({
               disabled={isBatchSaving}
               className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-emerald-950/40 transition-all cursor-pointer disabled:opacity-50"
             >
-              {isBatchSaving ? (
-                <>
-                  <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Salvando ({draftCount})...</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-3.5 h-3.5" />
-                  <span>Salvar Todas as Alterações ({draftCount})</span>
-                </>
-              )}
+              <Save className="w-3.5 h-3.5" />
+              <span>Salvar Todas as Alterações ({draftCount})</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Real-Time Batch Save Progress Modal */}
+      {batchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-[#16171b] rounded-3xl w-full max-w-md shadow-2xl border border-stone-200 dark:border-[#282a32] p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-[#22242a]">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                  <Save className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                    Salvando Livros no Banco
+                  </h3>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                    Sincronizando alterações com o banco de dados em tempo real
+                  </p>
+                </div>
+              </div>
+              {!isBatchSaving && (
+                <button
+                  onClick={() => setBatchModalOpen(false)}
+                  className="p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-md hover:bg-stone-100 dark:hover:bg-[#202228] transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-3 py-2">
+              <div className="flex justify-between text-xs font-medium text-stone-700 dark:text-stone-300">
+                <span className="flex items-center gap-2">
+                  {!batchSaveDone ? (
+                    <RotateCcw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                  ) : (
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  )}
+                  {batchSaveDone ? (
+                    'Salvo com sucesso!'
+                  ) : (
+                    `Salvando (${batchProgress.completed} de ${batchProgress.total})...`
+                  )}
+                </span>
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {batchProgress.percent}%
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-stone-100 dark:bg-[#202228] rounded-full h-2.5 overflow-hidden">
+                <div
+                  className="bg-emerald-600 dark:bg-emerald-500 h-2.5 rounded-full transition-all duration-200"
+                  style={{ width: `${batchProgress.percent}%` }}
+                />
+              </div>
+
+              {batchProgress.currentTitle && (
+                <p className="text-[11px] text-stone-500 dark:text-stone-400 truncate">
+                  Livro atual: <strong className="text-stone-800 dark:text-stone-200">{batchProgress.currentTitle}</strong>
+                </p>
+              )}
+
+              {batchError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-[11px] text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{batchError}</span>
+                </div>
+              )}
+
+              {batchSaveDone && (
+                <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/50 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                  <Check className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>Todas as edições foram gravadas com sucesso no banco de dados!</span>
+                </div>
+              )}
+            </div>
+
+            {batchError && !isBatchSaving && (
+              <div className="pt-2 flex justify-end gap-2 border-t border-stone-100 dark:border-[#22242a]">
+                <button
+                  type="button"
+                  onClick={() => setBatchModalOpen(false)}
+                  className="px-3.5 py-1.5 text-xs font-medium text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-[#202228] rounded-xl transition-colors"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAllDrafts}
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Tentar Novamente</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

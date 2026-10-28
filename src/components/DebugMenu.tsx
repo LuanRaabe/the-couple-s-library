@@ -7,13 +7,13 @@ import {
   RefreshCw, 
   X, 
   Trash2, 
-  ExternalLink,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles
 } from 'lucide-react';
-import { isDevOrPreview, getDbTarget, setDbTarget, DbTarget, isMaintenanceBypass } from '../utils/envHelper';
-import { getAllDraftBookIds, clearAllBookDrafts } from '../utils/sessionDraft';
-import { testConnection } from '../firebase';
+import { isDevOrPreview, getDbTarget, setDbTarget, DbTarget } from '@/core/config/env';
+import { getAllDraftBookIds, clearAllBookDrafts } from '@/core/session/draft';
+import { testConnection } from '@/core/firebase';
 
 interface DebugMenuProps {
   isOpen: boolean;
@@ -22,6 +22,7 @@ interface DebugMenuProps {
   onEnableMaintenance: () => void;
   onDisableMaintenance: () => void;
   onDbTargetChanged?: () => void;
+  onSyncProductionSpreadsheet?: (onProgress: (completed: number, total: number, msg?: string) => void) => Promise<void>;
 }
 
 export const DebugMenu: React.FC<DebugMenuProps> = ({
@@ -31,11 +32,16 @@ export const DebugMenu: React.FC<DebugMenuProps> = ({
   onEnableMaintenance,
   onDisableMaintenance,
   onDbTargetChanged,
+  onSyncProductionSpreadsheet,
 }) => {
   const [currentDb, setCurrentDb] = useState<DbTarget>(() => getDbTarget());
   const [draftCount, setDraftCount] = useState<number>(0);
   const [connStatus, setConnStatus] = useState<string | null>(null);
   const [isTestingConn, setIsTestingConn] = useState(false);
+
+  // Sync spreadsheet state in debug menu
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -67,6 +73,22 @@ export const DebugMenu: React.FC<DebugMenuProps> = ({
       setConnStatus(`✗ Erro na conexão: ${err.message}`);
     } finally {
       setIsTestingConn(false);
+    }
+  };
+
+  const handleRunSyncSpreadsheet = async () => {
+    if (!onSyncProductionSpreadsheet) return;
+    setIsSyncing(true);
+    setSyncStatus('Sincronizando 84 livros da planilha com o banco de produção...');
+    try {
+      await onSyncProductionSpreadsheet((completed, total, msg) => {
+        setSyncStatus(`Sincronizando: ${completed}/${total} (${msg || ''})`);
+      });
+      setSyncStatus('✓ 84 livros da planilha gravados no banco de produção com sucesso!');
+    } catch (err: any) {
+      setSyncStatus(`✗ Erro ao sincronizar: ${err.message}`);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -220,7 +242,44 @@ export const DebugMenu: React.FC<DebugMenuProps> = ({
             </div>
           </div>
 
-          {/* Section 3: Browser SessionStorage Drafts */}
+          {/* Section 3: Sync Production Database with Spreadsheet */}
+          {onSyncProductionSpreadsheet && (
+            <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200 dark:border-stone-700 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Atualizar Banco de Produção (84 Livros)</span>
+                  </h4>
+                  <p className="text-stone-500 dark:text-stone-400 text-[11px]">
+                    Sincroniza todos os 84 livros da planilha diretamente na coleção de produção ('books').
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRunSyncSpreadsheet}
+                  disabled={isSyncing}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <span>{isSyncing ? 'Sincronizando...' : 'Sincronizar'}</span>
+                </button>
+              </div>
+
+              {syncStatus && (
+                <p className={`p-2.5 rounded-xl font-mono text-[11px] ${
+                  syncStatus.startsWith('✓')
+                    ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    : 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300'
+                }`}>
+                  {syncStatus}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Section 4: Browser SessionStorage Drafts */}
           <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200 dark:border-stone-700 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -250,7 +309,7 @@ export const DebugMenu: React.FC<DebugMenuProps> = ({
             </div>
           </div>
 
-          {/* Section 4: Firestore Connection Diagnostics */}
+          {/* Section 5: Firestore Connection Diagnostics */}
           <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200 dark:border-stone-700 space-y-2">
             <div className="flex items-center justify-between">
               <div>

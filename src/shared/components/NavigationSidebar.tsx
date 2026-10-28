@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { ActiveTab } from './NavigationFilterBar';
-import { LibrarySettings } from '../../features/settings';
-import { isDevOrPreview } from '../../utils/envHelper';
+import { LibrarySettings } from '@/features/settings';
+import { isDevOrPreview } from '@/core/config/env';
 
 interface NavigationSidebarProps {
   isOpen: boolean;

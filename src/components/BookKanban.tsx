@@ -14,7 +14,7 @@ import {
   User,
   SlidersHorizontal
 } from 'lucide-react';
-import { Book, BookStatus, ReaderId, LibrarySettings } from '../types/book';
+import { Book, BookStatus, ReaderId, LibrarySettings } from '@/features/books';
 
 interface BookKanbanProps {
   books: Book[];

@@ -9,8 +9,8 @@ import {
   Menu,
   ChevronDown
 } from 'lucide-react';
-import { BookStatus } from '../../features/books/types';
-import { LibrarySettings } from '../../features/settings/types';
+import { BookStatus } from '@/features/books';
+import { LibrarySettings } from '@/features/settings';
 
 export type ActiveTab = 'grid' | 'table' | 'kanban' | 'recommendations' | 'stats';
 

@@ -1,2 +1,1 @@
-// Re-export from bookSearch for backwards compatibility
-export * from './bookSearch';
+export * from '@/features/books/services/googleBooksService';

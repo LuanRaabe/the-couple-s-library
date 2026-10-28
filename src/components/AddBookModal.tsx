@@ -18,8 +18,8 @@ import {
   AlertCircle,
   Barcode
 } from 'lucide-react';
-import { Book, BookStatus, ReaderId, LibrarySettings, GoogleBookSearchResult } from '../types/book';
-import { searchBooks, BookSearchProvider, fetchBookByOpenLibraryIsbn } from '../services/bookSearch';
+import { Book, BookStatus, ReaderId, LibrarySettings, GoogleBookSearchResult } from '@/features/books';
+import { searchBooks, BookSearchProvider, fetchBookByOpenLibraryIsbn } from '@/features/books';
 import { compressImageFile, formatFileSize } from '../utils/imageCompressor';
 
 interface AddBookModalProps {

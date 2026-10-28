@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import { X, Sparkles, Check, RefreshCw, Layers, Minimize2 } from 'lucide-react';
-import { Book } from '../types/book';
-import { BackgroundCoverSyncState } from '../features/books/hooks/useBackgroundCoverSync';
+import { Book, BackgroundCoverSyncState } from '@/features/books';
 
 interface BatchCoverSyncModalProps {
   isOpen: boolean;

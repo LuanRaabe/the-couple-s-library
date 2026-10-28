@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { Book } from '../types';
-import { fetchCoverForBook } from '../../../services/bookSearch';
+import { fetchCoverForBook } from '../services/bookSearchService';
 
 export type CoverSyncProvider = 'all' | 'openlibrary' | 'google' | 'brasilapi';
 
@@ -77,41 +77,32 @@ export function useBackgroundCoverSync(): BackgroundCoverSyncState {
       }
 
       let count = 0;
-      let processed = 0;
 
-      // Process in concurrent chunks of 3 for fast throughput without throttling
-      const CHUNK_SIZE = 3;
-      for (let i = 0; i < targetBooks.length; i += CHUNK_SIZE) {
+      // Sequential per-book loop ensures real-time UI ticks and prevents concurrent write clashes
+      for (let i = 0; i < targetBooks.length; i++) {
         if (isCancelledRef.current) break;
 
-        const chunk = targetBooks.slice(i, i + CHUNK_SIZE);
-        setCurrentBookTitle(chunk.map((b) => b.title).join(', '));
+        const book = targetBooks[i];
+        setCurrentBookTitle(book.title);
 
-        await Promise.all(
-          chunk.map(async (book) => {
-            if (isCancelledRef.current) return;
+        try {
+          const link = await fetchCoverForBook(book.title, book.authors, book.isbn, provider);
+          if (link && link !== book.coverUrl && !isCancelledRef.current) {
+            await onUpdateBook({
+              ...book,
+              coverUrl: link,
+              updatedAt: new Date().toISOString(),
+            });
+            count++;
+            setUpdatedCount(count);
+          }
+        } catch (err) {
+          console.warn(`Cover sync error for "${book.title}":`, err);
+        } finally {
+          setCurrentIndex(i + 1);
+        }
 
-            try {
-              const link = await fetchCoverForBook(book.title, book.authors, book.isbn, provider);
-              if (link && link !== book.coverUrl && !isCancelledRef.current) {
-                await onUpdateBook({
-                  ...book,
-                  coverUrl: link,
-                  updatedAt: new Date().toISOString(),
-                });
-                count++;
-                setUpdatedCount(count);
-              }
-            } catch (err) {
-              console.warn(`Cover sync error for ${book.title}:`, err);
-            } finally {
-              processed++;
-              setCurrentIndex(processed);
-            }
-          })
-        );
-
-        // Micro-pause between concurrent chunks
+        // Brief delay so browser updates DOM and paint frame smoothly
         await new Promise((r) => setTimeout(r, 60));
       }
 

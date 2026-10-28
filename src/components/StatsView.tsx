@@ -10,7 +10,7 @@ import {
   Layers,
   Heart
 } from 'lucide-react';
-import { Book, LibrarySettings } from '../types/book';
+import { Book, LibrarySettings } from '@/features/books';
 
 interface StatsViewProps {
   books: Book[];

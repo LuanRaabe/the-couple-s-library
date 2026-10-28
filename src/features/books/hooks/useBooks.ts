@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
-import { db, handleFirestoreError, OperationType } from '../../../firebase';
+import { db, handleFirestoreError, OperationType } from '@/core/firebase';
 import { Book, BookStatus, ReaderId } from '../types';
-import { USER_INITIAL_BOOKS } from '../../../data/userBooks';
+import { USER_INITIAL_BOOKS } from '../data/userBooks';
 import {
   updateBookStatusInDb,
   updateBookReaderInDb,
@@ -13,9 +13,12 @@ import {
   batchUpdateBooksInDb,
   deleteBookFromDb,
   seedBaseBooksInDb,
-} from '../services/bookService';
-import { getDbTarget } from '../../../utils/envHelper';
-import { clearBookDraft } from '../../../utils/sessionDraft';
+  syncProductionBooksWithSpreadsheet,
+  BatchProgressCallback,
+  BatchSaveResult,
+} from '../services/bookRepository';
+import { getDbTarget } from '@/core/config/env';
+import { clearBookDraft } from '@/core/session/draft';
 
 export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: number) {
   const [books, setBooks] = useState<Book[]>(() => {
@@ -260,10 +263,15 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
     }
   };
 
-  const handleBatchUpdateBooks = async (updatedBooksList: Book[]) => {
-    if (updatedBooksList.length === 0) return;
+  const handleBatchUpdateBooks = async (
+    updatedBooksList: Book[],
+    onProgress?: BatchProgressCallback
+  ): Promise<BatchSaveResult> => {
+    if (updatedBooksList.length === 0) {
+      return { success: true, savedCount: 0, totalCount: 0, failedBookIds: [], errors: [] };
+    }
 
-    // 1. Immediately apply all to in-memory state
+    // 1. Immediately apply to in-memory state
     setBooks((prev) => {
       const map = new Map(updatedBooksList.map((b) => [b.id, b]));
       return prev.map((b) => (map.has(b.id) ? map.get(b.id)! : b));
@@ -272,18 +280,63 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
     if (!currentUser || isBypassUser) {
       updatedBooksList.forEach((b) => clearBookDraft(b.id));
       showSaveToast(`${updatedBooksList.length} livro(s) alterado(s) na sessão.`);
+      return {
+        success: true,
+        savedCount: updatedBooksList.length,
+        totalCount: updatedBooksList.length,
+        failedBookIds: [],
+        errors: [],
+      };
+    }
+
+    try {
+      setIsSyncing(true);
+      const result = await batchUpdateBooksInDb(updatedBooksList, onProgress);
+
+      // ONLY for books that succeeded in the database, clear their session drafts
+      const failedSet = new Set(result.failedBookIds);
+      updatedBooksList.forEach((b) => {
+        if (!failedSet.has(b.id)) {
+          clearBookDraft(b.id);
+        }
+      });
+
+      if (result.success) {
+        showSaveToast(`${result.savedCount} livro(s) salvo(s) com sucesso no banco!`);
+      } else {
+        setErrorNotice(
+          `Salvos ${result.savedCount} de ${result.totalCount} livros. Os que falharam permanecem como rascunho.`
+        );
+      }
+
+      return result;
+    } catch (err: any) {
+      console.error('Falha em handleBatchUpdateBooks:', err);
+      setErrorNotice('Não foi possível salvar todos os livros no banco. Seus rascunhos continuam na sessão.');
+      throw err;
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  /**
+   * Updates or resets the production database ('books') with the 84 spreadsheet books.
+   */
+  const handleSyncProductionSpreadsheet = async (
+    onProgress?: BatchProgressCallback
+  ): Promise<void> => {
+    if (!currentUser || isBypassUser) {
+      showSaveToast('Apenas usuários autenticados podem sincronizar o banco de produção.');
       return;
     }
 
     try {
       setIsSyncing(true);
-      await batchUpdateBooksInDb(updatedBooksList);
-      // ONLY on success clear drafts from session
-      updatedBooksList.forEach((b) => clearBookDraft(b.id));
-      showSaveToast(`${updatedBooksList.length} livro(s) salvo(s) com sucesso no banco!`);
+      await syncProductionBooksWithSpreadsheet(currentUser, onProgress);
+      showSaveToast('Banco de produção sincronizado com a planilha com sucesso (84 livros)!');
     } catch (err: any) {
-      console.error('Falha em handleBatchUpdateBooks:', err);
-      setErrorNotice('Não foi possível salvar todos os livros no banco. Seus rascunhos continuam na sessão.');
+      console.error('Falha ao sincronizar banco de produção:', err);
+      setErrorNotice('Erro ao sincronizar banco de produção com a planilha.');
       throw err;
     } finally {
       setIsSyncing(false);
@@ -324,6 +377,7 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
     handleAddBook,
     handleUpdateBook,
     handleBatchUpdateBooks,
+    handleSyncProductionSpreadsheet,
     handleDeleteBook,
   };
 }

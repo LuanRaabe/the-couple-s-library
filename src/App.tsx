@@ -7,28 +7,28 @@ import React, { useState } from 'react';
 import { RefreshCw, Heart } from 'lucide-react';
 
 // FDD Feature Hooks & Types
-import { useAuth } from './features/auth';
-import { useLibrarySettings, SettingsModal } from './features/settings';
-import { useBooks, useBookFilters, useBackgroundCoverSync, Book } from './features/books';
+import { useAuth } from '@/features/auth';
+import { useLibrarySettings, SettingsModal } from '@/features/settings';
+import { useBooks, useBookFilters, useBackgroundCoverSync, Book } from '@/features/books';
 
 // Shared Components
-import { Header } from './shared/components/Header';
-import { NavigationFilterBar, ActiveTab } from './shared/components/NavigationFilterBar';
-import { NavigationSidebar } from './shared/components/NavigationSidebar';
-import { NotificationToast } from './shared/components/NotificationToast';
+import { Header } from '@/shared/components/Header';
+import { NavigationFilterBar, ActiveTab } from '@/shared/components/NavigationFilterBar';
+import { NavigationSidebar } from '@/shared/components/NavigationSidebar';
+import { NotificationToast } from '@/shared/components/NotificationToast';
 
 // Feature Views, Modals & Gate Screens
-import { LoginPage } from './components/LoginPage';
-import { DebugMenu } from './components/DebugMenu';
-import { BookGrid } from './components/BookGrid';
-import { BookTable } from './components/BookTable';
-import { BookKanban } from './components/BookKanban';
-import { RecommendationsView } from './components/RecommendationsView';
-import { StatsView } from './components/StatsView';
-import { AddBookModal } from './components/AddBookModal';
-import { BookDetailModal } from './components/BookDetailModal';
-import { BatchCoverSyncModal } from './components/BatchCoverSyncModal';
-import { BackgroundSyncFloatingWidget } from './components/BackgroundSyncFloatingWidget';
+import { LoginPage } from '@/components/LoginPage';
+import { DebugMenu } from '@/components/DebugMenu';
+import { BookGrid } from '@/components/BookGrid';
+import { BookTable } from '@/components/BookTable';
+import { BookKanban } from '@/components/BookKanban';
+import { RecommendationsView } from '@/components/RecommendationsView';
+import { StatsView } from '@/components/StatsView';
+import { AddBookModal } from '@/components/AddBookModal';
+import { BookDetailModal } from '@/components/BookDetailModal';
+import { BatchCoverSyncModal } from '@/components/BatchCoverSyncModal';
+import { BackgroundSyncFloatingWidget } from '@/components/BackgroundSyncFloatingWidget';
 
 export default function App() {
   // Auth feature slice with maintenance bypass capability
@@ -65,6 +65,7 @@ export default function App() {
     handleAddBook,
     handleUpdateBook,
     handleBatchUpdateBooks,
+    handleSyncProductionSpreadsheet,
     handleDeleteBook,
   } = useBooks(currentUser, dbTargetTrigger);
 
@@ -149,6 +150,7 @@ export default function App() {
           onEnableMaintenance={enableMaintenanceBypass}
           onDisableMaintenance={disableMaintenanceBypass}
           onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
+          onSyncProductionSpreadsheet={handleSyncProductionSpreadsheet}
         />
       </>
     );
@@ -320,6 +322,7 @@ export default function App() {
           onClose={() => setIsSettingsModalOpen(false)}
           settings={settings}
           onSaveSettings={saveSettings}
+          onSyncProductionSpreadsheet={handleSyncProductionSpreadsheet}
         />
       )}
 
@@ -332,7 +335,7 @@ export default function App() {
           onUpdateBook={handleUpdateBook}
           onSyncCompleted={(updated) => {
             if (updated > 0) {
-              setSaveNotice(`🎉 Sincronização em 2º plano concluída: ${updated} capa(s) atualizada(s)!`);
+              setSaveNotice(`🎉 Sincronização concluída: ${updated} capa(s) atualizada(s)!`);
             }
           }}
         />
@@ -358,6 +361,7 @@ export default function App() {
           onEnableMaintenance={enableMaintenanceBypass}
           onDisableMaintenance={disableMaintenanceBypass}
           onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
+          onSyncProductionSpreadsheet={handleSyncProductionSpreadsheet}
         />
       )}
 

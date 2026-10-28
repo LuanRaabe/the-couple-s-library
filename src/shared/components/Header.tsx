@@ -10,8 +10,8 @@ import {
   Menu
 } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
-import { LibrarySettings } from '../../features/settings';
-import { isDevOrPreview, getDbTarget } from '../../utils/envHelper';
+import { LibrarySettings } from '@/features/settings';
+import { isDevOrPreview, getDbTarget } from '@/core/config/env';
 
 interface HeaderProps {
   settings: LibrarySettings;

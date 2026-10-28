@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { User as FirebaseUser, onAuthStateChanged } from 'firebase/auth';
-import { auth, loginWithGoogle, logoutUser as firebaseLogout } from '../../../firebase';
-import { isMaintenanceBypass, setMaintenanceBypass } from '../../../utils/envHelper';
+import { auth, loginWithGoogle, logoutUser as firebaseLogout } from '@/core/firebase';
+import { isMaintenanceBypass, setMaintenanceBypass } from '@/core/config/env';
 
 const MAINTENANCE_USER = {
   uid: 'dev-maintenance-admin',
