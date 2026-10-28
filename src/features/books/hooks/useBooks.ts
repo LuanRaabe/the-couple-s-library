@@ -28,14 +28,10 @@ export function sortBooksAlphabetically(a: Book, b: Book): number {
 }
 
 export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: number) {
-  const [books, setBooks] = useState<Book[]>(() => {
-    return USER_INITIAL_BOOKS.map((b, idx) => ({
-      ...b,
-      id: `book_${(b as any).originalId || idx + 1}`,
-    })).sort(sortBooksAlphabetically);
-  });
+  // Never initialize with mock books — start empty and load exclusively from Firestore
+  const [books, setBooks] = useState<Book[]>([]);
 
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -55,17 +51,18 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
   useEffect(() => {
     if (!currentUser) {
       setIsLoading(false);
+      setBooks([]);
+      return;
+    }
+
+    if (isBypassUser) {
+      // In maintenance bypass mode without Google login, load base books for interactive UI testing
       setBooks(
         USER_INITIAL_BOOKS.map((b, idx) => ({
           ...b,
           id: `book_${(b as any).originalId || idx + 1}`,
         })).sort(sortBooksAlphabetically)
       );
-      return;
-    }
-
-    if (isBypassUser) {
-      // In maintenance bypass mode without Google login, load base books for interactive UI testing
       setIsLoading(false);
       return;
     }
