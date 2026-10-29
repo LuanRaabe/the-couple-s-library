@@ -23,6 +23,7 @@ interface BookTableProps {
   onBatchUpdateBooks?: (books: Book[]) => Promise<any>;
   onDeleteBook: (bookId: string) => void;
   onToggleFavorite: (bookId: string) => void;
+  onToggleOwned?: (bookId: string, newOwned: boolean) => void;
 }
 
 type SortField = 'title' | 'authors' | 'status' | 'reader' | 'progress' | 'avgRating' | 'dateAdded';
@@ -34,6 +35,7 @@ export const BookTable: React.FC<BookTableProps> = ({
   onUpdateBook,
   onDeleteBook,
   onToggleFavorite,
+  onToggleOwned,
 }) => {
   // Always default to alphabetical sorting A-Z as requested by user
   const [sortField, setSortField] = useState<SortField>('title');
@@ -171,6 +173,9 @@ export const BookTable: React.FC<BookTableProps> = ({
                   <ArrowUpDown className="w-3.5 h-3.5 opacity-60" />
                 </div>
               </th>
+              <th scope="col" className="py-4 px-3 text-center">
+                Posse
+              </th>
               <th scope="col" className="py-4 px-4 cursor-pointer select-none" onClick={() => handleSort('progress')}>
                 <div className="flex items-center gap-1.5 hover:text-amber-700 dark:hover:text-amber-400">
                   <span>Progresso</span>
@@ -198,6 +203,7 @@ export const BookTable: React.FC<BookTableProps> = ({
               const effectiveReader: ReaderId = rowDraft?.assignedReader || book.assignedReader;
               const effectiveCurrentPage = rowDraft?.currentPage !== undefined ? rowDraft.currentPage : (book.currentPage || 0);
               const effectivePageCount = rowDraft?.pageCount !== undefined ? rowDraft.pageCount : (book.pageCount || 0);
+              const effectiveOwned: boolean = rowDraft?.owned !== undefined ? rowDraft.owned : (book.owned !== false);
               const rowHasDraft = hasDraft(book.id);
               const isSavingThisRow = !!savingRows[book.id];
               const isSavedSuccess = !!savedSuccessRows[book.id];
@@ -324,6 +330,26 @@ export const BookTable: React.FC<BookTableProps> = ({
                         </span>
                       )}
                     </div>
+                  </td>
+
+                  {/* Posse / Ownership: Temos vs Lista de Desejos */}
+                  <td className="py-3 px-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => handleRowFieldChange(book.id, { owned: !effectiveOwned })}
+                      className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition-colors cursor-pointer ${
+                        effectiveOwned
+                          ? 'bg-stone-50 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-750'
+                          : 'bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800 hover:bg-violet-100 dark:hover:bg-violet-900/60'
+                      }`}
+                      title={
+                        effectiveOwned
+                          ? 'Temos na estante. Clique para marcar como Lista de Desejos'
+                          : 'Na Lista de Desejos. Clique para marcar como exemplar na estante'
+                      }
+                    >
+                      <span>{effectiveOwned ? '📦 Temos' : '🎁 Desejo'}</span>
+                    </button>
                   </td>
 
                   {/* Progress with inline quick-edit */}

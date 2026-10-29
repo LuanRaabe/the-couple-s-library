@@ -410,6 +410,15 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${statusColor.bg} ${statusColor.text} ${statusColor.border}`}>
                   {STATUS_LABELS[draftBook.status]}
                 </span>
+                {draftBook.owned === false ? (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300 border border-violet-300 dark:border-violet-800">
+                    🎁 Lista de Desejos
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300 border border-stone-200 dark:border-stone-700">
+                    📦 Temos na Estante
+                  </span>
+                )}
                 {readCountValue > 0 && (
                   <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                     readCountValue > 1
@@ -435,8 +444,20 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 {draftBook.authors || 'Autor Desconhecido'}
               </p>
 
-              {/* Status and Reader Switchers with explicit Save button notice */}
+              {/* Status, Reader and Ownership Switchers with explicit Save button notice */}
               <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-stone-200/60 dark:border-stone-800 text-xs">
+                <div className="flex items-center gap-1">
+                  <span className="text-stone-400 text-[11px]">Posse:</span>
+                  <select
+                    value={draftBook.owned !== false ? 'true' : 'false'}
+                    onChange={(e) => updateDraft({ owned: e.target.value === 'true' })}
+                    className="text-xs rounded-lg px-2 py-1 bg-white dark:bg-stone-800 border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-200 font-medium cursor-pointer"
+                  >
+                    <option value="true">📦 Temos na Estante</option>
+                    <option value="false">🎁 Lista de Desejos</option>
+                  </select>
+                </div>
+
                 <div className="flex items-center gap-1">
                   <span className="text-stone-400 text-[11px]">Status:</span>
                   <select

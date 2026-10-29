@@ -56,6 +56,7 @@ export interface Book {
   recommendations?: BookRecommendation[];
   readingLogs?: ReadingLog[];
   favorite?: boolean;
+  owned?: boolean; // true = Temos na Estante; false = Lista de Desejos (Wishlist)
   dateAdded?: string;
   dateStarted?: string;
   dateFinished?: string;

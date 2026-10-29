@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { BookStatus } from '@/features/books';
 import { LibrarySettings } from '@/features/settings';
+import { OwnershipFilter } from '@/features/books/hooks/useBookFilters';
 
 export type ActiveTab = 'grid' | 'table' | 'kanban' | 'recommendations' | 'stats';
 
@@ -23,6 +24,10 @@ interface NavigationFilterBarProps {
   onReaderFilterChange: (val: 'todos' | 'ele' | 'ela' | 'ambos') => void;
   statusFilter: 'todos' | BookStatus;
   onStatusFilterChange: (val: 'todos' | BookStatus) => void;
+  ownershipFilter?: OwnershipFilter;
+  onOwnershipFilterChange?: (val: OwnershipFilter) => void;
+  wishlistCount?: number;
+  ownedCount?: number;
   settings: LibrarySettings;
 }
 
@@ -43,6 +48,10 @@ export const NavigationFilterBar: React.FC<NavigationFilterBarProps> = ({
   onReaderFilterChange,
   statusFilter,
   onStatusFilterChange,
+  ownershipFilter = 'todos',
+  onOwnershipFilterChange,
+  wishlistCount,
+  ownedCount,
   settings,
 }) => {
   const currentConfig = TAB_CONFIG[currentTab] || TAB_CONFIG.grid;
@@ -86,13 +95,62 @@ export const NavigationFilterBar: React.FC<NavigationFilterBarProps> = ({
             />
           </div>
 
+          {/* Ownership Filter (Temos vs Lista de Desejos) */}
+          {onOwnershipFilterChange && (
+            <div className="flex items-center rounded-xl bg-stone-100 dark:bg-stone-800/80 p-0.5 border border-stone-300 dark:border-stone-750">
+              <button
+                type="button"
+                onClick={() => onOwnershipFilterChange('todos')}
+                className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all ${
+                  ownershipFilter === 'todos'
+                    ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-xs'
+                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                }`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => onOwnershipFilterChange('temos')}
+                className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
+                  ownershipFilter === 'temos'
+                    ? 'bg-white dark:bg-stone-900 text-amber-700 dark:text-amber-400 shadow-xs'
+                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                }`}
+                title="Livros que já temos na estante física ou digital"
+              >
+                <span>📦 Temos</span>
+                {ownedCount !== undefined && <span className="text-[10px] opacity-75">({ownedCount})</span>}
+              </button>
+              <button
+                type="button"
+                onClick={() => onOwnershipFilterChange('desejados')}
+                className={`px-2 py-1 text-xs font-semibold rounded-lg transition-all flex items-center gap-1 ${
+                  ownershipFilter === 'desejados'
+                    ? 'bg-violet-600 text-white shadow-xs'
+                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                }`}
+                title="Livros que desejamos comprar ou ganhar (Lista de Desejos)"
+              >
+                <span>🎁 Desejos</span>
+                {wishlistCount !== undefined && (
+                  <span className={`text-[10px] px-1 rounded-full ${
+                    ownershipFilter === 'desejados' ? 'bg-white/20 text-white' : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+                  }`}>
+                    {wishlistCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
+
           {/* Filter Reader */}
           <select
             value={readerFilter}
             onChange={(e) => onReaderFilterChange(e.target.value as any)}
             className="text-xs rounded-xl px-2.5 py-1.5 bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-750 text-stone-800 dark:text-stone-200 font-semibold cursor-pointer"
           >
-            <option value="todos">Todos os Livros</option>
+            <option value="todos">Todos os Leitores</option>
             <option value="ambos">Casal ({settings.eleName} & {settings.elaName})</option>
             <option value="ele">Apenas {settings.eleName}</option>
             <option value="ela">Apenas {settings.elaName}</option>

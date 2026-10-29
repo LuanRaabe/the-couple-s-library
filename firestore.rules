@@ -42,7 +42,8 @@ service cloud.firestore {
         (!('publisher' in data) || data.publisher == null || (data.publisher is string && data.publisher.size() <= 300)) &&
         (!('publishedDate' in data) || data.publishedDate == null || (data.publishedDate is string && data.publishedDate.size() <= 100)) &&
         (!('readCount' in data) || data.readCount == null || (data.readCount is number && data.readCount >= 0 && data.readCount <= 10000)) &&
-        (!('readPeriods' in data) || data.readPeriods == null || (data.readPeriods is list && data.readPeriods.size() <= 200));
+        (!('readPeriods' in data) || data.readPeriods == null || (data.readPeriods is list && data.readPeriods.size() <= 200)) &&
+        (!('owned' in data) || data.owned == null || data.owned is bool);
     }
 
     match /books/{bookId} {

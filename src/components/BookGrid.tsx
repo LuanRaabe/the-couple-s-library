@@ -10,6 +10,7 @@ interface BookGridProps {
   onSelectBook: (book: Book) => void;
   onUpdateStatus: (bookId: string, newStatus: BookStatus) => void;
   onToggleFavorite: (bookId: string) => void;
+  onToggleOwned?: (bookId: string, newOwned: boolean) => void;
 }
 
 export const BookGrid: React.FC<BookGridProps> = ({
@@ -18,6 +19,7 @@ export const BookGrid: React.FC<BookGridProps> = ({
   onSelectBook,
   onUpdateStatus,
   onToggleFavorite,
+  onToggleOwned,
 }) => {
   const { hasDraft, getDraft } = useSessionDrafts();
 
@@ -58,12 +60,25 @@ export const BookGrid: React.FC<BookGridProps> = ({
           >
             {/* Top Badges */}
             <div className="absolute top-2.5 inset-x-2.5 z-10 flex items-center justify-between pointer-events-none">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-wrap">
                 <span
                   className={`text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur-md shadow-xs border ${readerBadge.bg} ${readerBadge.text} ${readerBadge.border}`}
                 >
                   {readerBadge.label}
                 </span>
+                {effectiveBook.owned === false && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleOwned?.(book.id, true);
+                    }}
+                    className="pointer-events-auto text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-violet-600 text-white shadow-xs hover:bg-violet-700 transition-colors cursor-pointer"
+                    title="Na Lista de Desejos! Clique para marcar que já temos na estante."
+                  >
+                    🎁 Desejo
+                  </button>
+                )}
                 {isDrafted && (
                   <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500 text-stone-950 shadow-xs">
                     Rascunho
@@ -71,21 +86,37 @@ export const BookGrid: React.FC<BookGridProps> = ({
                 )}
               </div>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleFavorite(book.id);
-                }}
-                className="pointer-events-auto p-1.5 rounded-full bg-white/80 dark:bg-stone-900/80 backdrop-blur-md hover:bg-white dark:hover:bg-stone-900 text-stone-400 hover:text-amber-500 shadow-xs transition-transform active:scale-125"
-                title={book.favorite ? 'Favorito' : 'Favoritar'}
-              >
-                <Star
-                  className={`w-3.5 h-3.5 ${
-                    book.favorite ? 'fill-amber-400 text-amber-500' : 'text-stone-400'
-                  }`}
-                />
-              </button>
+              <div className="flex items-center gap-1 pointer-events-auto">
+                {onToggleOwned && effectiveBook.owned !== false && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleOwned(book.id, false);
+                    }}
+                    className="p-1 rounded-full bg-white/80 dark:bg-stone-900/80 backdrop-blur-md hover:bg-violet-50 text-stone-400 hover:text-violet-600 shadow-xs transition-opacity opacity-0 group-hover:opacity-100"
+                    title="Mover para Lista de Desejos (marcar como não possuído)"
+                  >
+                    <span className="text-[10px]">🎁</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite(book.id);
+                  }}
+                  className="p-1.5 rounded-full bg-white/80 dark:bg-stone-900/80 backdrop-blur-md hover:bg-white dark:hover:bg-stone-900 text-stone-400 hover:text-amber-500 shadow-xs transition-transform active:scale-125"
+                  title={book.favorite ? 'Favorito' : 'Favoritar'}
+                >
+                  <Star
+                    className={`w-3.5 h-3.5 ${
+                      book.favorite ? 'fill-amber-400 text-amber-500' : 'text-stone-400'
+                    }`}
+                  />
+                </button>
+              </div>
             </div>
 
             {/* Book Cover Container */}

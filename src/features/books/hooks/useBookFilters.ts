@@ -1,10 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Book, BookStatus } from '../types';
 
+export type OwnershipFilter = 'todos' | 'temos' | 'desejados';
+
 export function useBookFilters(books: Book[]) {
   const [searchQuery, setSearchQuery] = useState('');
   const [readerFilter, setReaderFilter] = useState<'todos' | 'ele' | 'ela' | 'ambos'>('todos');
   const [statusFilter, setStatusFilter] = useState<'todos' | BookStatus>('todos');
+  const [ownershipFilter, setOwnershipFilter] = useState<OwnershipFilter>('todos');
 
   const filteredBooks = useMemo(() => {
     const filtered = books.filter((book) => {
@@ -29,6 +32,13 @@ export function useBookFilters(books: Book[]) {
         if (book.status !== statusFilter) return false;
       }
 
+      // Ownership Filter (Temos vs Lista de Desejos)
+      if (ownershipFilter !== 'todos') {
+        const isOwned = book.owned !== false; // defaults to true if undefined
+        if (ownershipFilter === 'temos' && !isOwned) return false;
+        if (ownershipFilter === 'desejados' && isOwned) return false;
+      }
+
       return true;
     });
 
@@ -36,9 +46,11 @@ export function useBookFilters(books: Book[]) {
     return filtered.sort((a, b) =>
       (a.title || '').localeCompare(b.title || '', 'pt-BR', { sensitivity: 'base' })
     );
-  }, [books, searchQuery, readerFilter, statusFilter]);
+  }, [books, searchQuery, readerFilter, statusFilter, ownershipFilter]);
 
   const readCount = useMemo(() => books.filter((b) => b.status === 'lido').length, [books]);
+  const wishlistCount = useMemo(() => books.filter((b) => b.owned === false).length, [books]);
+  const ownedCount = useMemo(() => books.filter((b) => b.owned !== false).length, [books]);
 
   return {
     searchQuery,
@@ -47,7 +59,11 @@ export function useBookFilters(books: Book[]) {
     setReaderFilter,
     statusFilter,
     setStatusFilter,
+    ownershipFilter,
+    setOwnershipFilter,
     filteredBooks,
     readCount,
+    wishlistCount,
+    ownedCount,
   };
 }

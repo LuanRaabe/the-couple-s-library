@@ -24,7 +24,8 @@ export function getDbTarget(): DbTarget {
   if (saved === 'books_preview' || saved === 'books') {
     return saved as DbTarget;
   }
-  return isDevOrPreview() ? 'books_preview' : 'books';
+  // Default to 'books' universally across dev, preview and production to avoid split-brain loss
+  return 'books';
 }
 
 export function setDbTarget(target: DbTarget): void {

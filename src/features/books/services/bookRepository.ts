@@ -4,6 +4,7 @@ import {
   setDoc,
   deleteDoc,
   writeBatch,
+  getDocs,
 } from 'firebase/firestore';
 import { User as FirebaseUser } from 'firebase/auth';
 import { db, handleFirestoreError, withTimeout, sanitizeForFirestore, OperationType } from '@/core/firebase';
@@ -84,6 +85,21 @@ export async function toggleFavoriteInDb(bookId: string, newFavorite: boolean): 
     const bookRef = doc(db, collectionName, bookId);
     const payload = sanitizeForFirestore({
       favorite: newFavorite,
+      updatedAt: new Date().toISOString(),
+    });
+    await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function updateBookOwnedInDb(bookId: string, newOwned: boolean): Promise<void> {
+  const collectionName = getDbTarget();
+  const path = `${collectionName}/${bookId}`;
+  try {
+    const bookRef = doc(db, collectionName, bookId);
+    const payload = sanitizeForFirestore({
+      owned: newOwned,
       updatedAt: new Date().toISOString(),
     });
     await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
@@ -308,4 +324,23 @@ export async function syncProductionBooksWithSpreadsheet(
   onProgress?: BatchProgressCallback
 ): Promise<void> {
   await seedBaseBooksInDb(user, true, 'books', onProgress);
+}
+
+/**
+ * Recovers any books/edits from 'books_preview' to 'books' (Production), ensuring no work is lost.
+ */
+export async function recoverPreviewToProductionInDb(): Promise<number> {
+  const previewSnap = await getDocs(collection(db, 'books_preview'));
+  if (previewSnap.empty) return 0;
+
+  const batch = writeBatch(db);
+  let count = 0;
+  previewSnap.forEach((docSnap) => {
+    const data = docSnap.data();
+    const prodRef = doc(db, 'books', docSnap.id);
+    batch.set(prodRef, sanitizeForFirestore({ ...data, updatedAt: new Date().toISOString() }), { merge: true });
+    count++;
+  });
+  await withTimeout(batch.commit(), 15000);
+  return count;
 }

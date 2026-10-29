@@ -8,6 +8,7 @@ import {
   updateBookStatusInDb,
   updateBookReaderInDb,
   toggleFavoriteInDb,
+  updateBookOwnedInDb,
   createBookInDb,
   updateBookInDb,
   batchUpdateBooksInDb,
@@ -75,14 +76,11 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
       booksRef,
       (snapshot) => {
         if (snapshot.empty) {
-          if (!isSeedingRef.current) {
-            isSeedingRef.current = true;
-            seedBaseBooksInDb(currentUser, true)
-              .catch((err) => console.error('Auto-seed error:', err))
-              .finally(() => {
-                isSeedingRef.current = false;
-              });
-          }
+          // SAFE GUARD: Never auto-seed in onSnapshot!
+          // Preserves existing user data and stops destructive resets on reload/deploy/empty states.
+          setBooks([]);
+          setIsLoading(false);
+          setIsSyncing(false);
           return;
         }
 
@@ -110,6 +108,7 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
             readCount: data.readCount || (data.status === 'lido' ? 1 : 0),
             readPeriods: data.readPeriods || [],
             favorite: !!data.favorite,
+            owned: data.owned !== undefined ? Boolean(data.owned) : true,
             dateAdded: data.dateAdded || '',
             dateStarted: data.dateStarted || '',
             dateFinished: data.dateFinished || '',
@@ -208,6 +207,25 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
       showSaveToast(newFav ? 'Marcado como favorito no banco!' : 'Removido dos favoritos no banco!');
     } catch (err) {
       console.error('Error favorite:', err);
+    }
+  };
+
+  const handleToggleOwned = async (bookId: string, newOwned: boolean) => {
+    const book = books.find((b) => b.id === bookId);
+    if (!book) return;
+
+    setBooks((prev) => prev.map((b) => (b.id === bookId ? { ...b, owned: newOwned } : b)));
+
+    if (!currentUser || isBypassUser) {
+      showSaveToast(newOwned ? 'Marcado como exemplar que temos!' : 'Marcado como Lista de Desejos!');
+      return;
+    }
+
+    try {
+      await updateBookOwnedInDb(bookId, newOwned);
+      showSaveToast(newOwned ? 'Marcado: Temos na Estante!' : 'Adicionado à Lista de Desejos!');
+    } catch (err) {
+      console.error('Error updating owned status in db:', err);
     }
   };
 
@@ -380,6 +398,7 @@ export function useBooks(currentUser: FirebaseUser | null, dbTargetTrigger?: num
     handleUpdateStatus,
     handleUpdateReader,
     handleToggleFavorite,
+    handleToggleOwned,
     handleAddBook,
     handleUpdateBook,
     handleBatchUpdateBooks,

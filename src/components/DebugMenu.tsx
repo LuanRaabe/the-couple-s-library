@@ -14,6 +14,7 @@ import {
 import { isDevOrPreview, getDbTarget, setDbTarget, DbTarget } from '@/core/config/env';
 import { getAllDraftBookIds, clearAllBookDrafts } from '@/core/session/draft';
 import { testConnection } from '@/core/firebase';
+import { recoverPreviewToProductionInDb } from '@/features/books';
 
 interface DebugMenuProps {
   isOpen: boolean;
@@ -42,6 +43,10 @@ export const DebugMenu: React.FC<DebugMenuProps> = ({
   // Sync spreadsheet state in debug menu
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  // Recover preview state
+  const [isRecovering, setIsRecovering] = useState(false);
+  const [recoverStatus, setRecoverStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -89,6 +94,24 @@ export const DebugMenu: React.FC<DebugMenuProps> = ({
       setSyncStatus(`✗ Erro ao sincronizar: ${err.message}`);
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleRunRecoverPreview = async () => {
+    setIsRecovering(true);
+    setRecoverStatus('Buscando e copiando alterações de books_preview para books...');
+    try {
+      const count = await recoverPreviewToProductionInDb();
+      if (count === 0) {
+        setRecoverStatus('ℹ Nenhum dado em books_preview encontrado para recuperar.');
+      } else {
+        setRecoverStatus(`✓ ${count} livro(s) recuperados com sucesso para a coleção 'books'!`);
+        if (onDbTargetChanged) onDbTargetChanged();
+      }
+    } catch (err: any) {
+      setRecoverStatus(`✗ Erro na recuperação: ${err.message}`);
+    } finally {
+      setIsRecovering(false);
     }
   };
 
@@ -278,6 +301,41 @@ export const DebugMenu: React.FC<DebugMenuProps> = ({
               )}
             </div>
           )}
+
+          {/* Section: Recover trapped preview books into production */}
+          <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-bold text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span>Recuperar Alterações de Preview para Produção</span>
+                </h4>
+                <p className="text-stone-600 dark:text-stone-400 text-[11px]">
+                  Copia livros e alterações salvas em 'books_preview' e mescla com a coleção principal 'books'.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleRunRecoverPreview}
+                disabled={isRecovering}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-semibold flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                <RefreshCw className={`w-3 h-3 ${isRecovering ? 'animate-spin' : ''}`} />
+                <span>{isRecovering ? 'Recuperando...' : 'Recuperar'}</span>
+              </button>
+            </div>
+
+            {recoverStatus && (
+              <p className={`p-2.5 rounded-xl font-mono text-[11px] ${
+                recoverStatus.startsWith('✓')
+                  ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                  : 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300'
+              }`}>
+                {recoverStatus}
+              </p>
+            )}
+          </div>
 
           {/* Section 4: Browser SessionStorage Drafts */}
           <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200 dark:border-stone-700 space-y-2">

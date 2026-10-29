@@ -63,6 +63,7 @@ export default function App() {
     handleUpdateStatus,
     handleUpdateReader,
     handleToggleFavorite,
+    handleToggleOwned,
     handleAddBook,
     handleUpdateBook,
     handleBatchUpdateBooks,
@@ -78,8 +79,12 @@ export default function App() {
     setReaderFilter,
     statusFilter,
     setStatusFilter,
+    ownershipFilter,
+    setOwnershipFilter,
     filteredBooks,
     readCount,
+    wishlistCount,
+    ownedCount,
   } = useBookFilters(books);
 
   // Navigation tab persisted across reloads in localStorage
@@ -201,6 +206,10 @@ export default function App() {
           onReaderFilterChange={setReaderFilter}
           statusFilter={statusFilter}
           onStatusFilterChange={setStatusFilter}
+          ownershipFilter={ownershipFilter}
+          onOwnershipFilterChange={setOwnershipFilter}
+          wishlistCount={wishlistCount}
+          ownedCount={ownedCount}
           settings={settings}
         />
 
@@ -221,6 +230,7 @@ export default function App() {
                 onSelectBook={(b) => setSelectedBook(b)}
                 onUpdateStatus={handleUpdateStatus}
                 onToggleFavorite={handleToggleFavorite}
+                onToggleOwned={handleToggleOwned}
               />
             )}
 
@@ -235,6 +245,7 @@ export default function App() {
                 onBatchUpdateBooks={handleBatchUpdateBooks}
                 onDeleteBook={handleDeleteBook}
                 onToggleFavorite={handleToggleFavorite}
+                onToggleOwned={handleToggleOwned}
               />
             )}
 

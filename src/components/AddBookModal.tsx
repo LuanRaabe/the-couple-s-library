@@ -71,6 +71,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const [categories, setCategories] = useState('');
   const [status, setStatus] = useState<BookStatus>('quero_ler');
   const [assignedReader, setAssignedReader] = useState<ReaderId>(activeReader);
+  const [owned, setOwned] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Open Library ISBN Autofill state
@@ -220,8 +221,9 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         publishedDate: item.publishedDate || '',
         description: item.description || '',
         categories: item.categories || [],
-        status,
+        status: owned ? status : 'quero_ler',
         assignedReader,
+        owned,
         ratings: {},
         notes: {},
         recommendations: [],
@@ -260,8 +262,9 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         publishedDate: publishedDate.trim(),
         description: description.trim(),
         categories: parsedCategories,
-        status,
+        status: owned ? status : 'quero_ler',
         assignedReader,
+        owned,
         ratings: {},
         notes: {},
         recommendations: [],
@@ -327,8 +330,40 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
           </button>
         </div>
 
-        {/* Reader & Status Target Bar */}
+        {/* Posse, Reader & Status Target Bar */}
         <div className="bg-amber-50/60 dark:bg-stone-800/60 p-3 sm:p-4 border-b border-amber-200/50 dark:border-stone-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+          {/* Ownership toggle */}
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-stone-700 dark:text-stone-300">Posse:</span>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setOwned(true)}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center gap-1 cursor-pointer ${
+                  owned
+                    ? 'bg-amber-600 text-white font-bold shadow-xs'
+                    : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700'
+                }`}
+              >
+                <span>📦 Temos na Estante</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOwned(false);
+                  setStatus('quero_ler');
+                }}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors flex items-center gap-1 cursor-pointer ${
+                  !owned
+                    ? 'bg-violet-600 text-white font-bold shadow-xs'
+                    : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700'
+                }`}
+              >
+                <span>🎁 Lista de Desejos</span>
+              </button>
+            </div>
+          </div>
+
           {/* Reader select */}
           <div className="flex items-center gap-2">
             <span className="font-semibold text-stone-700 dark:text-stone-300">Leitor:</span>
@@ -336,7 +371,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
               <button
                 type="button"
                 onClick={() => setAssignedReader('ele')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
                   assignedReader === 'ele'
                     ? 'bg-amber-600 text-white font-bold'
                     : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700'
@@ -347,7 +382,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
               <button
                 type="button"
                 onClick={() => setAssignedReader('ela')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
                   assignedReader === 'ela'
                     ? 'bg-rose-600 text-white font-bold'
                     : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700'
@@ -358,7 +393,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
               <button
                 type="button"
                 onClick={() => setAssignedReader('ambos')}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors cursor-pointer ${
                   assignedReader === 'ambos'
                     ? 'bg-purple-600 text-white font-bold'
                     : 'bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700'
@@ -371,13 +406,13 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 
           {/* Initial Status select */}
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-stone-700 dark:text-stone-300">Status inicial:</span>
+            <span className="font-semibold text-stone-700 dark:text-stone-300">Status:</span>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as BookStatus)}
-              className="px-2.5 py-1 rounded-lg bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-300 dark:border-stone-700 font-medium"
+              className="px-2.5 py-1 rounded-lg bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-300 dark:border-stone-700 font-medium cursor-pointer"
             >
-              <option value="quero_ler">Quero Ler (Lista de Desejos)</option>
+              <option value="quero_ler">Quero Ler</option>
               <option value="lendo">Lendo Agora</option>
               <option value="lido">Já Lido</option>
               <option value="pausado">Pausado</option>
