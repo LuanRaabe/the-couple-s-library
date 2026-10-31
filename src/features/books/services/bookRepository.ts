@@ -117,16 +117,60 @@ export async function updateBookOwnedInDb(bookId: string, newOwned: boolean): Pr
   });
 }
 
+/**
+ * Prepares and standardizes a book entity for Firestore persistence,
+ * ensuring all API metadata fields (ISBN-10/13, subtitle, publisher, language, source) are preserved.
+ */
+export function prepareBookPayload(book: Partial<Book>): Record<string, any> {
+  const isbn = (book.isbn || '').trim();
+  const cleanIsbnDigits = isbn.replace(/[^0-9X]/gi, '');
+  const isbn10 = book.isbn10 || (cleanIsbnDigits.length === 10 ? cleanIsbnDigits : undefined);
+  const isbn13 = book.isbn13 || (cleanIsbnDigits.length === 13 ? cleanIsbnDigits : undefined);
+
+  return sanitizeForFirestore({
+    ...book,
+    title: (book.title || 'Sem Título').trim(),
+    subtitle: book.subtitle?.trim() || undefined,
+    authors: (book.authors || 'Autor Desconhecido').trim(),
+    coverUrl: book.coverUrl?.trim() || '',
+    isbn: isbn,
+    isbn10: isbn10,
+    isbn13: isbn13,
+    edition: book.edition?.trim() || undefined,
+    pageCount: typeof book.pageCount === 'number' && book.pageCount > 0 ? book.pageCount : 0,
+    currentPage: typeof book.currentPage === 'number' ? book.currentPage : 0,
+    publisher: (book.publisher || '').trim(),
+    publishedDate: (book.publishedDate || '').trim(),
+    description: (book.description || '').trim(),
+    categories: Array.isArray(book.categories) ? book.categories : [],
+    language: book.language?.trim() || 'pt',
+    source: book.source || 'google',
+    status: book.status || 'quero_ler',
+    assignedReader: book.assignedReader || 'ambos',
+    readCount: typeof book.readCount === 'number' ? book.readCount : 0,
+    readPeriods: Array.isArray(book.readPeriods) ? book.readPeriods : [],
+    ratings: book.ratings || {},
+    notes: book.notes || {},
+    recommendations: Array.isArray(book.recommendations) ? book.recommendations : [],
+    readingLogs: Array.isArray(book.readingLogs) ? book.readingLogs : [],
+    favorite: Boolean(book.favorite),
+    owned: book.owned !== undefined ? Boolean(book.owned) : true,
+    dateAdded: book.dateAdded || new Date().toISOString().split('T')[0],
+    dateStarted: book.dateStarted || null,
+    dateFinished: book.dateFinished || null,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export async function createBookInDb(docId: string, bookData: Omit<Book, 'id'>, userId: string): Promise<void> {
   return withAuthRecovery(async () => {
     const collectionName = getDbTarget();
     const path = `${collectionName}/${docId}`;
     try {
       const bookRef = doc(db, collectionName, docId);
-      const payload = sanitizeForFirestore({
+      const payload = prepareBookPayload({
         ...bookData,
         createdBy: userId,
-        updatedAt: new Date().toISOString(),
       });
       await withTimeout(setDoc(bookRef, payload), 9000);
     } catch (error) {
@@ -142,13 +186,7 @@ export async function updateBookInDb(updatedBook: Book): Promise<void> {
     try {
       const bookRef = doc(db, collectionName, updatedBook.id);
       const { id, ...dataToSave } = updatedBook;
-      const payload = sanitizeForFirestore({
-        ...dataToSave,
-        title: updatedBook.title || 'Sem Título',
-        status: updatedBook.status || 'quero_ler',
-        assignedReader: updatedBook.assignedReader || 'ambos',
-        updatedAt: new Date().toISOString(),
-      });
+      const payload = prepareBookPayload(dataToSave);
       await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, path);
@@ -188,13 +226,7 @@ export async function batchUpdateBooksInDb(
           }
           const bookRef = doc(db, collectionName, book.id);
           const { id, ...dataToSave } = book;
-          const payload = sanitizeForFirestore({
-            ...dataToSave,
-            title: book.title || 'Sem Título',
-            status: book.status || 'quero_ler',
-            assignedReader: book.assignedReader || 'ambos',
-            updatedAt: new Date().toISOString(),
-          });
+          const payload = prepareBookPayload(dataToSave);
 
           await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
           savedCount++;

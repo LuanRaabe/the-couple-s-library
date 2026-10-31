@@ -49,6 +49,57 @@ export const SEARCH_PROVIDERS: ProviderMeta[] = [
 ];
 
 /**
+ * Normalizes Google Books volume items into standard GoogleBookSearchResult
+ */
+export function normalizeGoogleResult(item: any): GoogleBookSearchResult {
+  const info = item?.volumeInfo || {};
+
+  let coverUrl = info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail || '';
+  if (coverUrl) {
+    coverUrl = coverUrl.replace(/^http:\/\//i, 'https://').replace('&edge=curl', '');
+  }
+
+  let isbn = '';
+  let isbn10: string | undefined;
+  let isbn13: string | undefined;
+
+  if (info.industryIdentifiers && Array.isArray(info.industryIdentifiers)) {
+    const id13 = info.industryIdentifiers.find((id: any) => id.type === 'ISBN_13');
+    const id10 = info.industryIdentifiers.find((id: any) => id.type === 'ISBN_10');
+    if (id13?.identifier) isbn13 = String(id13.identifier).trim();
+    if (id10?.identifier) isbn10 = String(id10.identifier).trim();
+    isbn = isbn13 || isbn10 || '';
+  }
+
+  const authors = Array.isArray(info.authors)
+    ? info.authors.join(', ')
+    : (info.authors || 'Autor Desconhecido');
+
+  const categories = Array.isArray(info.categories)
+    ? info.categories
+    : (info.categories ? [info.categories] : []);
+
+  return {
+    id: `google-${item.id || Math.random().toString(36).substring(2)}`,
+    title: (info.title || 'Sem título').trim(),
+    subtitle: info.subtitle ? String(info.subtitle).trim() : undefined,
+    authors: authors.trim(),
+    coverUrl,
+    isbn,
+    isbn10,
+    isbn13,
+    pageCount: typeof info.pageCount === 'number' && info.pageCount > 0 ? info.pageCount : undefined,
+    publishedDate: info.publishedDate ? String(info.publishedDate).trim() : '',
+    publisher: info.publisher ? String(info.publisher).trim() : '',
+    description: info.description ? String(info.description).trim() : '',
+    categories,
+    language: info.language || 'pt',
+    edition: info.contentVersion || undefined,
+    source: 'google',
+  };
+}
+
+/**
  * Search Google Books API
  */
 export async function searchGoogleBooks(query: string): Promise<GoogleBookSearchResult[]> {
@@ -63,45 +114,113 @@ export async function searchGoogleBooks(query: string): Promise<GoogleBookSearch
     const data = await res.json();
     
     if (data.items && Array.isArray(data.items) && data.items.length > 0) {
-      return data.items.map((item: any) => {
-        const info = item.volumeInfo || {};
-
-        let coverUrl = info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail || '';
-        if (coverUrl) {
-          coverUrl = coverUrl.replace(/^http:\/\//i, 'https://').replace('&edge=curl', '');
-        }
-
-        let isbn = '';
-        if (info.industryIdentifiers && Array.isArray(info.industryIdentifiers)) {
-          const isbn13 = info.industryIdentifiers.find((id: any) => id.type === 'ISBN_13');
-          const isbn10 = info.industryIdentifiers.find((id: any) => id.type === 'ISBN_10');
-          isbn = isbn13?.identifier || isbn10?.identifier || '';
-        }
-
-        const authors = Array.isArray(info.authors) ? info.authors.join(', ') : (info.authors || 'Autor Desconhecido');
-        const categories = Array.isArray(info.categories) ? info.categories : (info.categories ? [info.categories] : []);
-
-        return {
-          id: `google-${item.id || Math.random().toString(36).substring(2)}`,
-          title: info.title || 'Sem título',
-          authors,
-          coverUrl,
-          pageCount: typeof info.pageCount === 'number' && info.pageCount > 0 ? info.pageCount : undefined,
-          publishedDate: info.publishedDate || '',
-          publisher: info.publisher || '',
-          description: info.description || '',
-          categories,
-          isbn,
-          language: info.language || 'pt',
-          source: 'google' as const,
-        };
-      });
+      return data.items.map(normalizeGoogleResult);
     }
   } catch (error) {
     console.warn('Google Books search failed:', error);
   }
 
   return [];
+}
+
+/**
+ * Normalizes Open Library API responses (jscmd=data, search.json, /isbn/.json)
+ */
+export function normalizeOpenLibraryResult(raw: any, explicitIsbn?: string): GoogleBookSearchResult {
+  // 1. If it's a jscmd=data item (from /api/books?jscmd=data):
+  if (raw?.title && (raw.authors || raw.by_statement || raw.publishers || raw.cover)) {
+    const authors = Array.isArray(raw.authors)
+      ? raw.authors.map((a: any) => a.name).filter(Boolean).join(', ')
+      : (raw.by_statement || 'Autor Desconhecido');
+
+    const publisher = Array.isArray(raw.publishers)
+      ? raw.publishers.map((p: any) => p.name).filter(Boolean).join(', ')
+      : (raw.publishers?.[0]?.name || '');
+
+    const isbn = explicitIsbn || raw.identifiers?.isbn_13?.[0] || raw.identifiers?.isbn_10?.[0] || '';
+    const cleanDigits = isbn.replace(/[^0-9X]/gi, '');
+    const isbn10 = raw.identifiers?.isbn_10?.[0] || (cleanDigits.length === 10 ? cleanDigits : undefined);
+    const isbn13 = raw.identifiers?.isbn_13?.[0] || (cleanDigits.length === 13 ? cleanDigits : undefined);
+
+    const coverUrl = raw.cover?.large || 
+                     raw.cover?.medium || 
+                     raw.cover?.small || 
+                     (isbn ? `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg` : '');
+
+    const categories = Array.isArray(raw.subjects)
+      ? raw.subjects.map((s: any) => (typeof s === 'string' ? s : s.name)).filter(Boolean).slice(0, 5)
+      : [];
+
+    let description = '';
+    if (typeof raw.description === 'string') {
+      description = raw.description;
+    } else if (raw.description?.value) {
+      description = raw.description.value;
+    } else if (typeof raw.notes === 'string') {
+      description = raw.notes;
+    } else if (raw.notes?.value) {
+      description = raw.notes.value;
+    }
+
+    return {
+      id: `ol-${raw.key?.replace('/books/', '') || isbn || Math.random().toString(36).substring(2)}`,
+      title: (raw.title || 'Sem título').trim(),
+      subtitle: raw.subtitle ? String(raw.subtitle).trim() : undefined,
+      authors: authors.trim(),
+      coverUrl,
+      isbn,
+      isbn10,
+      isbn13,
+      pageCount: typeof raw.number_of_pages === 'number' && raw.number_of_pages > 0 ? raw.number_of_pages : undefined,
+      publishedDate: raw.publish_date ? String(raw.publish_date).trim() : '',
+      publisher: publisher.trim(),
+      description: description.trim(),
+      categories,
+      language: raw.languages?.[0]?.key?.replace('/languages/', '') || 'pt',
+      edition: raw.edition_name || undefined,
+      source: 'openlibrary',
+    };
+  }
+
+  // 2. If it's a search.json doc:
+  const isbns = Array.isArray(raw?.isbn) ? raw.isbn : [];
+  const primaryIsbn = explicitIsbn || isbns[0] || '';
+  const cleanIsbnDigits = primaryIsbn.replace(/[^0-9X]/gi, '');
+  const isbn10 = isbns.find((i: string) => i.replace(/[^0-9X]/gi, '').length === 10) || (cleanIsbnDigits.length === 10 ? cleanIsbnDigits : undefined);
+  const isbn13 = isbns.find((i: string) => i.replace(/[^0-9X]/gi, '').length === 13) || (cleanIsbnDigits.length === 13 ? cleanIsbnDigits : undefined);
+
+  let coverUrl = '';
+  if (raw?.cover_i) {
+    coverUrl = `https://covers.openlibrary.org/b/id/${raw.cover_i}-L.jpg`;
+  } else if (primaryIsbn) {
+    coverUrl = `https://covers.openlibrary.org/b/isbn/${primaryIsbn}-L.jpg`;
+  }
+
+  const authors = Array.isArray(raw?.author_name)
+    ? raw.author_name.join(', ')
+    : (raw?.author_name || 'Autor Desconhecido');
+
+  const publishedDate = raw?.first_publish_year ? String(raw.first_publish_year) : '';
+  const publisher = Array.isArray(raw?.publisher) ? raw.publisher[0] : (raw?.publisher || '');
+  const categories = Array.isArray(raw?.subject) ? raw.subject.slice(0, 5) : [];
+
+  return {
+    id: `ol-${raw?.key?.replace('/works/', '') || Math.random().toString(36).substring(2)}`,
+    title: (raw?.title || 'Sem título').trim(),
+    subtitle: raw?.subtitle ? String(raw.subtitle).trim() : undefined,
+    authors: authors.trim(),
+    coverUrl,
+    isbn: primaryIsbn,
+    isbn10,
+    isbn13,
+    pageCount: typeof raw?.number_of_pages_median === 'number' && raw.number_of_pages_median > 0 ? raw.number_of_pages_median : undefined,
+    publishedDate: publishedDate.trim(),
+    publisher: String(publisher).trim(),
+    description: '',
+    categories,
+    language: raw?.language?.[0] || 'pt',
+    source: 'openlibrary',
+  };
 }
 
 /**
@@ -123,48 +242,7 @@ export async function fetchBookByOpenLibraryIsbn(rawIsbn: string): Promise<Googl
       const item = data[bibKey] || (Object.keys(data).length > 0 ? Object.values(data)[0] as any : null);
 
       if (item && item.title) {
-        const authors = Array.isArray(item.authors)
-          ? item.authors.map((a: any) => a.name).filter(Boolean).join(', ')
-          : (item.by_statement || 'Autor Desconhecido');
-
-        const publisher = Array.isArray(item.publishers)
-          ? item.publishers.map((p: any) => p.name).filter(Boolean).join(', ')
-          : (item.publishers?.[0]?.name || '');
-
-        const coverUrl = item.cover?.large || 
-                         item.cover?.medium || 
-                         item.cover?.small || 
-                         `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg`;
-
-        const categories = Array.isArray(item.subjects)
-          ? item.subjects.map((s: any) => s.name || s).slice(0, 5)
-          : [];
-
-        let description = '';
-        if (typeof item.description === 'string') {
-          description = item.description;
-        } else if (item.description?.value) {
-          description = item.description.value;
-        } else if (typeof item.notes === 'string') {
-          description = item.notes;
-        } else if (item.notes?.value) {
-          description = item.notes.value;
-        }
-
-        return {
-          id: `ol-isbn-${cleanIsbn}`,
-          title: item.title,
-          authors: authors || 'Autor Desconhecido',
-          coverUrl,
-          pageCount: typeof item.number_of_pages === 'number' && item.number_of_pages > 0 ? item.number_of_pages : undefined,
-          publishedDate: item.publish_date || '',
-          publisher,
-          description: description.trim(),
-          categories,
-          isbn: cleanIsbn,
-          language: 'pt',
-          source: 'openlibrary' as const,
-        };
+        return normalizeOpenLibraryResult(item, cleanIsbn);
       }
     }
   } catch (error) {
@@ -178,23 +256,6 @@ export async function fetchBookByOpenLibraryIsbn(rawIsbn: string): Promise<Googl
     if (res.ok) {
       const data = await res.json();
       if (data && data.title) {
-        let coverUrl = '';
-        if (Array.isArray(data.covers) && data.covers[0]) {
-          coverUrl = `https://covers.openlibrary.org/b/id/${data.covers[0]}-L.jpg`;
-        } else {
-          coverUrl = `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg`;
-        }
-
-        const publisher = Array.isArray(data.publishers) ? data.publishers[0] : (data.publishers || '');
-        const pageCount = typeof data.number_of_pages === 'number' ? data.number_of_pages : undefined;
-        let description = '';
-        if (typeof data.description === 'string') {
-          description = data.description;
-        } else if (data.description?.value) {
-          description = data.description.value;
-        }
-
-        // Try to fetch author name if author keys are present
         let authorName = 'Autor Desconhecido';
         if (Array.isArray(data.authors) && data.authors[0]?.key) {
           try {
@@ -207,21 +268,8 @@ export async function fetchBookByOpenLibraryIsbn(rawIsbn: string): Promise<Googl
             // ignore
           }
         }
-
-        return {
-          id: `ol-isbn-${cleanIsbn}`,
-          title: data.title,
-          authors: authorName,
-          coverUrl,
-          pageCount,
-          publishedDate: data.publish_date || '',
-          publisher,
-          description,
-          categories: [],
-          isbn: cleanIsbn,
-          language: 'pt',
-          source: 'openlibrary' as const,
-        };
+        data.authors = authorName;
+        return normalizeOpenLibraryResult(data, cleanIsbn);
       }
     }
   } catch (error) {
@@ -236,31 +284,7 @@ export async function fetchBookByOpenLibraryIsbn(rawIsbn: string): Promise<Googl
       const searchData = await res.json();
       const doc = searchData.docs?.[0];
       if (doc && doc.title) {
-        let coverUrl = '';
-        if (doc.cover_i) {
-          coverUrl = `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
-        } else {
-          coverUrl = `https://covers.openlibrary.org/b/isbn/${cleanIsbn}-L.jpg`;
-        }
-
-        const authors = Array.isArray(doc.author_name)
-          ? doc.author_name.join(', ')
-          : (doc.author_name || 'Autor Desconhecido');
-
-        return {
-          id: `ol-isbn-${cleanIsbn}`,
-          title: doc.title,
-          authors,
-          coverUrl,
-          pageCount: doc.number_of_pages_median || undefined,
-          publishedDate: doc.first_publish_year ? String(doc.first_publish_year) : '',
-          publisher: doc.publisher?.[0] || '',
-          description: '',
-          categories: Array.isArray(doc.subject) ? doc.subject.slice(0, 5) : [],
-          isbn: cleanIsbn,
-          language: doc.language?.[0] || 'pt',
-          source: 'openlibrary' as const,
-        };
+        return normalizeOpenLibraryResult(doc, cleanIsbn);
       }
     }
   } catch (error) {
@@ -296,45 +320,39 @@ export async function searchOpenLibrary(query: string): Promise<GoogleBookSearch
     const data = await res.json();
 
     if (data.docs && Array.isArray(data.docs) && data.docs.length > 0) {
-      return data.docs.map((doc: any) => {
-        let coverUrl = '';
-        if (doc.cover_i) {
-          coverUrl = `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
-        } else if (doc.isbn && doc.isbn[0]) {
-          coverUrl = `https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-L.jpg`;
-        }
-
-        const authors = Array.isArray(doc.author_name)
-          ? doc.author_name.join(', ')
-          : (doc.author_name || 'Autor Desconhecido');
-
-        const publishedDate = doc.first_publish_year ? String(doc.first_publish_year) : '';
-        const publisher = doc.publisher?.[0] || '';
-        const isbn = doc.isbn?.[0] || '';
-        const pageCount = doc.number_of_pages_median || undefined;
-        const categories = Array.isArray(doc.subject) ? doc.subject.slice(0, 4) : [];
-
-        return {
-          id: `ol-${doc.key?.replace('/works/', '') || Math.random().toString(36).substring(2)}`,
-          title: doc.title || 'Sem título',
-          authors,
-          coverUrl,
-          pageCount,
-          publishedDate,
-          publisher,
-          description: '',
-          categories,
-          isbn,
-          language: doc.language?.[0] || 'pt',
-          source: 'openlibrary' as const,
-        };
-      });
+      return data.docs.map((doc: any) => normalizeOpenLibraryResult(doc));
     }
   } catch (error) {
     console.warn('Open Library search failed:', error);
   }
 
   return [];
+}
+
+/**
+ * Normalizes Gutendex (Project Gutenberg) book results
+ */
+export function normalizeGutendexResult(item: any): GoogleBookSearchResult {
+  const authors = Array.isArray(item?.authors)
+    ? item.authors.map((a: any) => a.name.split(',').reverse().join(' ').trim()).join(', ')
+    : 'Autor Clássico';
+
+  const coverUrl = item?.formats?.['image/jpeg'] || '';
+  const categories = Array.isArray(item?.subjects) ? item.subjects.slice(0, 4) : [];
+
+  return {
+    id: `gutenberg-${item.id}`,
+    title: (item?.title || 'Sem título').trim(),
+    authors: authors.trim() || 'Autor Desconhecido',
+    coverUrl,
+    pageCount: undefined,
+    publishedDate: '',
+    publisher: 'Project Gutenberg (Domínio Público)',
+    description: `Obra clássica do Projeto Gutenberg (ID: ${item.id}). Disponível livremente em domínio público.`,
+    categories,
+    language: item?.languages?.[0] || 'en',
+    source: 'gutendex',
+  };
 }
 
 /**
@@ -353,31 +371,44 @@ export async function searchGutendex(query: string): Promise<GoogleBookSearchRes
     const data = await res.json();
 
     if (data.results && Array.isArray(data.results) && data.results.length > 0) {
-      return data.results.slice(0, 10).map((item: any) => {
-        const authors = Array.isArray(item.authors)
-          ? item.authors.map((a: any) => a.name.split(',').reverse().join(' ').trim()).join(', ')
-          : 'Autor Clássico';
-
-        const coverUrl = item.formats?.['image/jpeg'] || '';
-        const categories = Array.isArray(item.subjects) ? item.subjects.slice(0, 3) : [];
-
-        return {
-          id: `gutenberg-${item.id}`,
-          title: item.title,
-          authors: authors || 'Autor Desconhecido',
-          coverUrl,
-          description: `Obra clássica do Projeto Gutenberg (ID: ${item.id})`,
-          categories,
-          language: item.languages?.[0] || 'en',
-          source: 'openlibrary' as const, // reuse compatible tag
-        };
-      });
+      return data.results.slice(0, 10).map(normalizeGutendexResult);
     }
   } catch (error) {
     console.warn('Gutendex search failed:', error);
   }
 
   return [];
+}
+
+/**
+ * Normalizes BrasilAPI ISBN lookup responses
+ */
+export function normalizeBrasilApiResult(data: any, cleanIsbn: string): GoogleBookSearchResult {
+  const authors = Array.isArray(data?.authors)
+    ? data.authors.join(', ')
+    : (data?.authors || 'Autor Desconhecido');
+
+  const isbn = data?.isbn || cleanIsbn;
+  const isbn10 = cleanIsbn.length === 10 ? cleanIsbn : undefined;
+  const isbn13 = cleanIsbn.length === 13 ? cleanIsbn : undefined;
+
+  return {
+    id: `brasilapi-${cleanIsbn}`,
+    title: (data?.title || 'Sem título').trim(),
+    subtitle: data?.subtitle ? String(data.subtitle).trim() : undefined,
+    authors: String(authors).trim(),
+    coverUrl: data?.cover_url || '',
+    pageCount: typeof data?.page_count === 'number' && data.page_count > 0 ? data.page_count : undefined,
+    publishedDate: data?.year ? String(data.year) : '',
+    publisher: (data?.publisher || '').trim(),
+    description: (data?.synopsis || '').trim(),
+    categories: Array.isArray(data?.subjects) ? data.subjects : [],
+    isbn,
+    isbn10,
+    isbn13,
+    language: 'pt',
+    source: 'brasilapi',
+  };
 }
 
 /**
@@ -395,24 +426,7 @@ export async function searchBrasilApi(isbn: string): Promise<GoogleBookSearchRes
     const data = await res.json();
 
     if (data && data.title) {
-      const authors = Array.isArray(data.authors)
-        ? data.authors.join(', ')
-        : (data.authors || 'Autor Desconhecido');
-
-      return [{
-        id: `brasilapi-${cleanIsbn}`,
-        title: data.title,
-        authors,
-        coverUrl: data.cover_url || '',
-        pageCount: data.page_count || undefined,
-        publishedDate: data.year ? String(data.year) : '',
-        publisher: data.publisher || '',
-        description: data.synopsis || '',
-        categories: data.subjects || [],
-        isbn: data.isbn || cleanIsbn,
-        language: 'pt',
-        source: 'brasilapi' as const,
-      }];
+      return [normalizeBrasilApiResult(data, cleanIsbn)];
     }
   } catch (error) {
     console.warn('BrasilAPI ISBN lookup failed:', error);

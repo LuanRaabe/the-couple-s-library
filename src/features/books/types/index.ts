@@ -2,6 +2,8 @@ export type BookStatus = 'quero_ler' | 'lendo' | 'lido' | 'abandonado' | 'pausad
 
 export type ReaderId = 'ele' | 'ela' | 'ambos';
 
+export type BookSource = 'google' | 'openlibrary' | 'brasilapi' | 'gutendex' | 'manual';
+
 export interface ReadingLog {
   id: string;
   reader: 'ele' | 'ela';
@@ -28,13 +30,46 @@ export interface ReadPeriod {
   notes?: string;
 }
 
+/**
+ * Standardized metadata model for books fetched from external APIs
+ * (Google Books, Open Library, BrasilAPI, Gutendex).
+ */
+export interface BookApiMetadata {
+  id?: string;
+  title: string;
+  subtitle?: string;
+  authors: string;
+  coverUrl?: string;
+  isbn?: string;
+  isbn10?: string;
+  isbn13?: string;
+  pageCount?: number;
+  publisher?: string;
+  publishedDate?: string;
+  description?: string;
+  categories?: string[];
+  language?: string;
+  edition?: string;
+  source?: BookSource;
+  rawMetadata?: Record<string, any>;
+}
+
+/**
+ * Persistent Book entity stored in Firestore and local storage.
+ */
 export interface Book {
   id: string;
   originalId?: number;
   title: string;
+  subtitle?: string;
   authors: string;
   coverUrl?: string;
   isbn?: string;
+  isbn10?: string;
+  isbn13?: string;
+  edition?: string;
+  language?: string;
+  source?: BookSource;
   pageCount?: number;
   currentPage?: number;
   publisher?: string;
@@ -64,19 +99,11 @@ export interface Book {
   updatedAt?: string;
 }
 
-export interface GoogleBookSearchResult {
+/**
+ * Compatibility alias: GoogleBookSearchResult extends BookApiMetadata with guaranteed ID
+ */
+export interface GoogleBookSearchResult extends BookApiMetadata {
   id: string;
-  title: string;
-  authors: string;
-  coverUrl?: string;
-  pageCount?: number;
-  publishedDate?: string;
-  publisher?: string;
-  description?: string;
-  categories?: string[];
-  isbn?: string;
-  language?: string;
-  source?: 'google' | 'openlibrary' | 'brasilapi';
 }
 
 export type { LibrarySettings } from '../../settings/types';

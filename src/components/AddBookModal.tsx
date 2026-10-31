@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { 
   Book, 
+  BookApiMetadata,
   BookStatus, 
   ReaderId, 
   LibrarySettings, 
@@ -29,7 +30,8 @@ import {
   SELECTABLE_API_PROVIDERS, 
   ApiProviderId, 
   ApiSearchStatus,
-  fetchBookByOpenLibraryIsbn 
+  fetchBookByOpenLibraryIsbn,
+  buildBookFromApi 
 } from '@/features/books';
 import { compressImageFile, formatFileSize } from '../utils/imageCompressor';
 
@@ -295,27 +297,11 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
   const handleSelectBookResult = async (item: GoogleBookSearchResult) => {
     setIsSubmitting(true);
     try {
-      const newBook: Omit<Book, 'id'> = {
-        title: item.title,
-        authors: item.authors,
-        coverUrl: item.coverUrl || '',
-        isbn: item.isbn || '',
-        pageCount: item.pageCount || 0,
-        currentPage: 0,
-        publisher: item.publisher || '',
-        publishedDate: item.publishedDate || '',
-        description: item.description || '',
-        categories: item.categories || [],
-        status: owned ? status : 'quero_ler',
+      const newBook = buildBookFromApi(item, {
+        status,
         assignedReader,
         owned,
-        ratings: {},
-        notes: {},
-        recommendations: [],
-        readingLogs: [],
-        favorite: false,
-        dateAdded: new Date().toISOString().split('T')[0],
-      };
+      });
       await onAddBook(newBook);
       onClose();
     } catch (err) {
@@ -336,27 +322,25 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         .map((c) => c.trim())
         .filter(Boolean);
 
-      const newBook: Omit<Book, 'id'> = {
+      const manualMetadata: BookApiMetadata = {
         title: title.trim(),
         authors: authors.trim() || 'Autor Desconhecido',
         coverUrl: coverUrl.trim(),
         isbn: isbn.trim(),
         pageCount: typeof pageCount === 'number' && pageCount > 0 ? pageCount : 0,
-        currentPage: 0,
         publisher: publisher.trim(),
         publishedDate: publishedDate.trim(),
         description: description.trim(),
         categories: parsedCategories,
-        status: owned ? status : 'quero_ler',
+        source: 'manual',
+      };
+
+      const newBook = buildBookFromApi(manualMetadata, {
+        status,
         assignedReader,
         owned,
-        ratings: {},
-        notes: {},
-        recommendations: [],
-        readingLogs: [],
-        favorite: false,
-        dateAdded: new Date().toISOString().split('T')[0],
-      };
+      });
+
       await onAddBook(newBook);
       onClose();
     } catch (err) {

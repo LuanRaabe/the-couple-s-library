@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { 
   Book, 
+  BookApiMetadata,
   BookStatus, 
   ReaderId, 
   LibrarySettings, 
@@ -29,7 +30,8 @@ import {
   SELECTABLE_API_PROVIDERS, 
   ApiProviderId, 
   ApiSearchStatus,
-  fetchBookByOpenLibraryIsbn 
+  fetchBookByOpenLibraryIsbn,
+  buildBookFromApi 
 } from '@/features/books';
 import { compressImageFile, formatFileSize } from '@/utils/imageCompressor';
 
@@ -290,26 +292,11 @@ export const AddBookPage: React.FC<AddBookPageProps> = ({
   const handleAddFromSearch = async (bookResult: GoogleBookSearchResult) => {
     setIsSubmitting(true);
     try {
-      const newBook: Omit<Book, 'id'> = {
-        title: bookResult.title,
-        authors: bookResult.authors,
-        coverUrl: bookResult.coverUrl,
-        isbn: bookResult.isbn,
-        pageCount: bookResult.pageCount || 0,
-        publisher: bookResult.publisher,
-        publishedDate: bookResult.publishedDate,
-        description: bookResult.description,
-        categories: bookResult.categories,
-        status: owned ? status : 'quero_ler',
+      const newBook = buildBookFromApi(bookResult, {
+        status,
         assignedReader,
         owned,
-        ratings: {},
-        notes: {},
-        recommendations: [],
-        readingLogs: [],
-        favorite: false,
-        dateAdded: new Date().toISOString().split('T')[0],
-      };
+      });
       await onAddBook(newBook);
       onBack();
     } catch (err) {
@@ -325,7 +312,14 @@ export const AddBookPage: React.FC<AddBookPageProps> = ({
 
     setIsSubmitting(true);
     try {
-      const newBook: Omit<Book, 'id'> = {
+      const parsedCategories = categories.trim()
+        ? categories
+            .split(',')
+            .map((c) => c.trim())
+            .filter(Boolean)
+        : [];
+
+      const manualMetadata: BookApiMetadata = {
         title: title.trim(),
         authors: authors.trim() || 'Autor Desconhecido',
         coverUrl: coverUrl.trim(),
@@ -334,22 +328,16 @@ export const AddBookPage: React.FC<AddBookPageProps> = ({
         publisher: publisher.trim(),
         publishedDate: publishedDate.trim(),
         description: description.trim(),
-        categories: categories.trim()
-          ? categories
-              .split(',')
-              .map((c) => c.trim())
-              .filter(Boolean)
-          : [],
-        status: owned ? status : 'quero_ler',
+        categories: parsedCategories,
+        source: 'manual',
+      };
+
+      const newBook = buildBookFromApi(manualMetadata, {
+        status,
         assignedReader,
         owned,
-        ratings: {},
-        notes: {},
-        recommendations: [],
-        readingLogs: [],
-        favorite: false,
-        dateAdded: new Date().toISOString().split('T')[0],
-      };
+      });
+
       await onAddBook(newBook);
       onBack();
     } catch (err) {

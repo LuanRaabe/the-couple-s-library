@@ -935,6 +935,15 @@ export const BookDetailPage: React.FC<BookDetailPageProps> = ({
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                {book.subtitle && (
+                  <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-200/60 dark:border-stone-800 sm:col-span-2 md:col-span-3">
+                    <span className="text-[11px] text-stone-400 block font-medium">Subtítulo</span>
+                    <span className="font-semibold text-stone-800 dark:text-stone-200 text-sm mt-0.5 block">
+                      {book.subtitle}
+                    </span>
+                  </div>
+                )}
+
                 <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-200/60 dark:border-stone-800">
                   <span className="text-[11px] text-stone-400 block font-medium">Editora</span>
                   <span className="font-semibold text-stone-800 dark:text-stone-200 text-sm mt-0.5 block">
@@ -956,17 +965,37 @@ export const BookDetailPage: React.FC<BookDetailPageProps> = ({
                   </span>
                 </div>
 
-                <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-200/60 dark:border-stone-800 sm:col-span-2 md:col-span-1">
+                <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-200/60 dark:border-stone-800">
                   <span className="text-[11px] text-stone-400 block font-medium">Código ISBN</span>
                   <span className="font-mono text-stone-800 dark:text-stone-200 text-xs mt-0.5 block">
                     {book.isbn || 'Não cadastrado'}
                   </span>
+                  {(book.isbn10 || book.isbn13) && (
+                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1 text-[10px] text-stone-500 font-mono">
+                      {book.isbn13 && <span>ISBN-13: {book.isbn13}</span>}
+                      {book.isbn10 && <span>ISBN-10: {book.isbn10}</span>}
+                    </div>
+                  )}
                 </div>
 
-                <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-200/60 dark:border-stone-800 sm:col-span-2">
+                <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-200/60 dark:border-stone-800">
+                  <span className="text-[11px] text-stone-400 block font-medium">Idioma & Origem</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="font-semibold uppercase text-stone-800 dark:text-stone-200 text-xs">
+                      {book.language || 'pt'}
+                    </span>
+                    {book.source && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-md bg-stone-200/80 dark:bg-stone-700/80 text-stone-700 dark:text-stone-300 font-medium">
+                        {book.source === 'google' ? 'Google Books' : book.source === 'openlibrary' ? 'Open Library' : book.source === 'brasilapi' ? 'Brasil API' : book.source === 'gutendex' ? 'Gutenberg' : 'Manual'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-3 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-200/60 dark:border-stone-800 sm:col-span-2 md:col-span-1">
                   <span className="text-[11px] text-stone-400 block font-medium">Gênero / Categorias</span>
                   <span className="font-semibold text-stone-800 dark:text-stone-200 text-xs mt-0.5 block">
-                    {Array.isArray(book.categories) ? book.categories.join(', ') : (book.categories || 'Não especificadas')}
+                    {Array.isArray(book.categories) && book.categories.length > 0 ? book.categories.join(', ') : 'Não especificadas'}
                   </span>
                 </div>
               </div>
