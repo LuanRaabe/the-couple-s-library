@@ -16,7 +16,8 @@ import {
   Check,
   ChevronRight,
   LogOut,
-  User
+  User,
+  RefreshCw
 } from 'lucide-react';
 import { User as FirebaseUser } from 'firebase/auth';
 import { ActiveTab } from './NavigationFilterBar';
@@ -37,6 +38,9 @@ interface NavigationSidebarProps {
   onOpenSyncCoversModal?: () => void;
   onOpenDebugMenu?: () => void;
   onLogout?: () => void;
+  onReloadFromDb?: () => Promise<void> | void;
+  isRefreshing?: boolean;
+  lastSyncTime?: number | null;
 }
 
 export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
@@ -53,6 +57,9 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   onOpenSyncCoversModal,
   onOpenDebugMenu,
   onLogout,
+  onReloadFromDb,
+  isRefreshing = false,
+  lastSyncTime,
 }) => {
   const isPreview = isDevOrPreview();
 
@@ -277,6 +284,37 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                 </div>
                 <ChevronRight className="w-4 h-4 text-stone-400" />
               </button>
+
+              {/* Recarregar / Sincronizar com o Banco de Dados */}
+              {onReloadFromDb && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onReloadFromDb();
+                  }}
+                  disabled={isRefreshing}
+                  className="w-full p-2.5 rounded-2xl bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 text-amber-900 dark:text-amber-200 font-semibold text-xs flex items-center justify-between border border-amber-300 dark:border-amber-800 transition-colors cursor-pointer disabled:opacity-60"
+                  title="Puxa os dados frescos do Firestore e atualiza o cache do navegador"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <RefreshCw className={`w-4 h-4 text-amber-600 dark:text-amber-400 ml-1.5 shrink-0 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <div className="text-left">
+                      <p className="font-bold text-xs text-amber-900 dark:text-amber-100">
+                        {isRefreshing ? 'Recarregando...' : 'Recarregar Banco'}
+                      </p>
+                      <p className="text-[10px] text-amber-700/80 dark:text-amber-400">
+                        {lastSyncTime
+                          ? `Último sync: ${new Date(lastSyncTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                          : 'Sincronizar do Firestore'}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white dark:bg-stone-900 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300">
+                    Sincronizar
+                  </span>
+                </button>
+              )}
 
               {/* Sincronização em segundo plano de capas */}
               {onOpenSyncCoversModal && (

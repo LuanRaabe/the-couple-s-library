@@ -11,6 +11,7 @@ import { db, handleFirestoreError, withTimeout, sanitizeForFirestore, OperationT
 import { Book, BookStatus, ReaderId } from '../types';
 import { USER_INITIAL_BOOKS } from '../data/userBooks';
 import { getDbTarget, getSettingsCollection } from '@/core/config/env';
+import { withAuthRecovery, notifySessionExpired, isAuthOrPermissionError } from '@/core/session/authSession';
 
 export interface BatchProgressCallback {
   (completed: number, total: number, currentTitle?: string): void;
@@ -25,122 +26,134 @@ export interface BatchSaveResult {
 }
 
 export async function updateBookStatusInDb(bookId: string, newStatus: BookStatus, book?: Book): Promise<void> {
-  const collectionName = getDbTarget();
-  const path = `${collectionName}/${bookId}`;
-  try {
-    const bookRef = doc(db, collectionName, bookId);
-    const isNowFinished = newStatus === 'lido';
+  return withAuthRecovery(async () => {
+    const collectionName = getDbTarget();
+    const path = `${collectionName}/${bookId}`;
+    try {
+      const bookRef = doc(db, collectionName, bookId);
+      const isNowFinished = newStatus === 'lido';
 
-    const payload = sanitizeForFirestore({
-      ...(book
-        ? {
-            title: book.title,
-            authors: book.authors || '',
-            assignedReader: book.assignedReader || 'ambos',
-          }
-        : {}),
-      status: newStatus,
-      dateStarted:
-        newStatus === 'lendo' && (!book || !book.dateStarted)
-          ? new Date().toISOString().split('T')[0]
-          : book?.dateStarted || null,
-      dateFinished: isNowFinished
-        ? book?.dateFinished || new Date().toISOString().split('T')[0]
-        : book?.dateFinished || null,
-      currentPage: isNowFinished && book?.pageCount ? book.pageCount : book?.currentPage || 0,
-      updatedAt: new Date().toISOString(),
-    });
+      const payload = sanitizeForFirestore({
+        ...(book
+          ? {
+              title: book.title,
+              authors: book.authors || '',
+              assignedReader: book.assignedReader || 'ambos',
+            }
+          : {}),
+        status: newStatus,
+        dateStarted:
+          newStatus === 'lendo' && (!book || !book.dateStarted)
+            ? new Date().toISOString().split('T')[0]
+            : book?.dateStarted || null,
+        dateFinished: isNowFinished
+          ? book?.dateFinished || new Date().toISOString().split('T')[0]
+          : book?.dateFinished || null,
+        currentPage: isNowFinished && book?.pageCount ? book.pageCount : book?.currentPage || 0,
+        updatedAt: new Date().toISOString(),
+      });
 
-    await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+      await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  });
 }
 
 export async function updateBookReaderInDb(bookId: string, newReader: ReaderId, book?: Book): Promise<void> {
-  const collectionName = getDbTarget();
-  const path = `${collectionName}/${bookId}`;
-  try {
-    const bookRef = doc(db, collectionName, bookId);
-    const payload = sanitizeForFirestore({
-      ...(book
-        ? {
-            title: book.title,
-            status: book.status || 'quero_ler',
-          }
-        : {}),
-      assignedReader: newReader,
-      updatedAt: new Date().toISOString(),
-    });
-    await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  return withAuthRecovery(async () => {
+    const collectionName = getDbTarget();
+    const path = `${collectionName}/${bookId}`;
+    try {
+      const bookRef = doc(db, collectionName, bookId);
+      const payload = sanitizeForFirestore({
+        ...(book
+          ? {
+              title: book.title,
+              status: book.status || 'quero_ler',
+            }
+          : {}),
+        assignedReader: newReader,
+        updatedAt: new Date().toISOString(),
+      });
+      await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  });
 }
 
 export async function toggleFavoriteInDb(bookId: string, newFavorite: boolean): Promise<void> {
-  const collectionName = getDbTarget();
-  const path = `${collectionName}/${bookId}`;
-  try {
-    const bookRef = doc(db, collectionName, bookId);
-    const payload = sanitizeForFirestore({
-      favorite: newFavorite,
-      updatedAt: new Date().toISOString(),
-    });
-    await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  return withAuthRecovery(async () => {
+    const collectionName = getDbTarget();
+    const path = `${collectionName}/${bookId}`;
+    try {
+      const bookRef = doc(db, collectionName, bookId);
+      const payload = sanitizeForFirestore({
+        favorite: newFavorite,
+        updatedAt: new Date().toISOString(),
+      });
+      await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  });
 }
 
 export async function updateBookOwnedInDb(bookId: string, newOwned: boolean): Promise<void> {
-  const collectionName = getDbTarget();
-  const path = `${collectionName}/${bookId}`;
-  try {
-    const bookRef = doc(db, collectionName, bookId);
-    const payload = sanitizeForFirestore({
-      owned: newOwned,
-      updatedAt: new Date().toISOString(),
-    });
-    await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  return withAuthRecovery(async () => {
+    const collectionName = getDbTarget();
+    const path = `${collectionName}/${bookId}`;
+    try {
+      const bookRef = doc(db, collectionName, bookId);
+      const payload = sanitizeForFirestore({
+        owned: newOwned,
+        updatedAt: new Date().toISOString(),
+      });
+      await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  });
 }
 
 export async function createBookInDb(docId: string, bookData: Omit<Book, 'id'>, userId: string): Promise<void> {
-  const collectionName = getDbTarget();
-  const path = `${collectionName}/${docId}`;
-  try {
-    const bookRef = doc(db, collectionName, docId);
-    const payload = sanitizeForFirestore({
-      ...bookData,
-      createdBy: userId,
-      updatedAt: new Date().toISOString(),
-    });
-    await withTimeout(setDoc(bookRef, payload), 9000);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+  return withAuthRecovery(async () => {
+    const collectionName = getDbTarget();
+    const path = `${collectionName}/${docId}`;
+    try {
+      const bookRef = doc(db, collectionName, docId);
+      const payload = sanitizeForFirestore({
+        ...bookData,
+        createdBy: userId,
+        updatedAt: new Date().toISOString(),
+      });
+      await withTimeout(setDoc(bookRef, payload), 9000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    }
+  });
 }
 
 export async function updateBookInDb(updatedBook: Book): Promise<void> {
-  const collectionName = getDbTarget();
-  const path = `${collectionName}/${updatedBook.id}`;
-  try {
-    const bookRef = doc(db, collectionName, updatedBook.id);
-    const { id, ...dataToSave } = updatedBook;
-    const payload = sanitizeForFirestore({
-      ...dataToSave,
-      title: updatedBook.title || 'Sem Título',
-      status: updatedBook.status || 'quero_ler',
-      assignedReader: updatedBook.assignedReader || 'ambos',
-      updatedAt: new Date().toISOString(),
-    });
-    await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  return withAuthRecovery(async () => {
+    const collectionName = getDbTarget();
+    const path = `${collectionName}/${updatedBook.id}`;
+    try {
+      const bookRef = doc(db, collectionName, updatedBook.id);
+      const { id, ...dataToSave } = updatedBook;
+      const payload = sanitizeForFirestore({
+        ...dataToSave,
+        title: updatedBook.title || 'Sem Título',
+        status: updatedBook.status || 'quero_ler',
+        assignedReader: updatedBook.assignedReader || 'ambos',
+        updatedAt: new Date().toISOString(),
+      });
+      await withTimeout(setDoc(bookRef, payload, { merge: true }), 9000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    }
+  });
 }
 
 /**
@@ -190,6 +203,9 @@ export async function batchUpdateBooksInDb(
           }
         } catch (err: any) {
           console.error(`Falha ao salvar livro ${book.id} (${book.title}):`, err);
+          if (isAuthOrPermissionError(err)) {
+            notifySessionExpired('Sua sessão expirou por inatividade. Faça login com o Google para continuar salvando.');
+          }
           failedBookIds.push(book.id);
           errors.push(err?.message || `Erro no livro "${book.title}"`);
         }
@@ -226,13 +242,15 @@ export async function batchUpdateBooksInDb(
 }
 
 export async function deleteBookFromDb(bookId: string): Promise<void> {
-  const collectionName = getDbTarget();
-  const path = `${collectionName}/${bookId}`;
-  try {
-    await withTimeout(deleteDoc(doc(db, collectionName, bookId)), 9000);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
+  return withAuthRecovery(async () => {
+    const collectionName = getDbTarget();
+    const path = `${collectionName}/${bookId}`;
+    try {
+      await withTimeout(deleteDoc(doc(db, collectionName, bookId)), 9000);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  });
 }
 
 /**

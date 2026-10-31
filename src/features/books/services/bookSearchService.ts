@@ -872,3 +872,411 @@ export async function searchCoversFromAllApis(
   await Promise.allSettled(fetchPromises);
   return covers;
 }
+
+// -------------------------------------------------------------
+// STREAMING MULTI-API SELECTION & REAL-TIME PROGRESS EXTENSIONS
+// -------------------------------------------------------------
+
+export type ApiProviderId = 'openlibrary' | 'google' | 'brasilapi' | 'gutendex';
+
+export interface ApiProviderConfig {
+  id: ApiProviderId;
+  name: string;
+  badge: string;
+  description: string;
+  speed: string;
+  fastest?: boolean;
+}
+
+export const SELECTABLE_API_PROVIDERS: ApiProviderConfig[] = [
+  {
+    id: 'openlibrary',
+    name: 'Open Library',
+    badge: '🏛️ Open Library',
+    description: 'Catálogo aberto mundial e capas em alta resolução (Geralmente a mais rápida)',
+    speed: '~300ms',
+    fastest: true,
+  },
+  {
+    id: 'google',
+    name: 'Google Livros',
+    badge: '🔍 Google Books',
+    description: 'Catálogo contemporâneo amplo com dados editoriais e sinopses',
+    speed: '~800ms',
+  },
+  {
+    id: 'brasilapi',
+    name: 'Brasil API (ISBN)',
+    badge: '🇧🇷 Brasil API',
+    description: 'Base oficial de ISBN do Brasil (Câmara Brasileira do Livro)',
+    speed: 'ISBN (~600ms)',
+  },
+  {
+    id: 'gutendex',
+    name: 'Gutenberg',
+    badge: '📖 Gutenberg',
+    description: 'Acervo de literatura clássica mundial e domínio público',
+    speed: '~1.5s',
+  },
+];
+
+export interface ApiSearchStatus {
+  providerId: ApiProviderId;
+  providerName: string;
+  providerBadge: string;
+  state: 'idle' | 'searching' | 'success' | 'empty' | 'error';
+  count: number;
+  message?: string;
+  error?: string;
+}
+
+export interface StreamBookSearchCallbacks {
+  onProviderStatus?: (providerId: ApiProviderId, status: ApiSearchStatus) => void;
+  onIncrementalResults?: (newItems: GoogleBookSearchResult[], allItems: GoogleBookSearchResult[]) => void;
+}
+
+/**
+ * Searches only the user-selected APIs in parallel, streaming each API's results
+ * to the UI immediately as soon as that specific API responds.
+ */
+export async function searchBooksStream(
+  query: string,
+  selectedProviders: ApiProviderId[] = ['openlibrary', 'google'],
+  callbacks?: StreamBookSearchCallbacks
+): Promise<GoogleBookSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed || trimmed.length < 2) return [];
+
+  const isIsbn = /^[\d-]{10,17}[xX]?$/.test(trimmed);
+  const cleanIsbn = isIsbn ? trimmed.replace(/[^0-9X]/gi, '') : '';
+
+  const accumulated: GoogleBookSearchResult[] = [];
+  const seenNormTitles = new Set<string>();
+
+  const appendUnique = (newItems: GoogleBookSearchResult[]) => {
+    const freshlyAdded: GoogleBookSearchResult[] = [];
+    for (const item of newItems) {
+      const norm = normalizeTitle(item.title);
+      if (!seenNormTitles.has(norm)) {
+        seenNormTitles.add(norm);
+        accumulated.push(item);
+        freshlyAdded.push(item);
+      } else {
+        // If existing item has no cover but newly arrived item has cover, replace
+        const idx = accumulated.findIndex((c) => normalizeTitle(c.title) === norm);
+        if (idx !== -1 && !accumulated[idx].coverUrl && item.coverUrl) {
+          accumulated[idx] = item;
+        }
+      }
+    }
+    if (freshlyAdded.length > 0 && callbacks?.onIncrementalResults) {
+      callbacks.onIncrementalResults(freshlyAdded, [...accumulated]);
+    }
+  };
+
+  // Set initial 'searching' state for all selected providers
+  selectedProviders.forEach((pId) => {
+    const meta = SELECTABLE_API_PROVIDERS.find((p) => p.id === pId);
+    callbacks?.onProviderStatus?.(pId, {
+      providerId: pId,
+      providerName: meta?.name || pId,
+      providerBadge: meta?.badge || pId,
+      state: 'searching',
+      count: 0,
+    });
+  });
+
+  const tasks = selectedProviders.map(async (providerId) => {
+    const meta = SELECTABLE_API_PROVIDERS.find((p) => p.id === providerId);
+    try {
+      let results: GoogleBookSearchResult[] = [];
+
+      if (providerId === 'openlibrary') {
+        if (cleanIsbn) {
+          const direct = await fetchBookByOpenLibraryIsbn(cleanIsbn);
+          if (direct) results = [direct];
+        }
+        if (results.length === 0) {
+          results = await searchOpenLibrary(trimmed);
+        }
+      } else if (providerId === 'google') {
+        const gQuery = cleanIsbn ? `isbn:${cleanIsbn}` : trimmed;
+        results = await searchGoogleBooks(gQuery);
+      } else if (providerId === 'brasilapi') {
+        if (cleanIsbn) {
+          results = await searchBrasilApi(cleanIsbn);
+        } else {
+          results = [];
+        }
+      } else if (providerId === 'gutendex') {
+        results = await searchGutendex(trimmed);
+      }
+
+      // Append immediately
+      appendUnique(results);
+
+      callbacks?.onProviderStatus?.(providerId, {
+        providerId,
+        providerName: meta?.name || providerId,
+        providerBadge: meta?.badge || providerId,
+        state: results.length > 0 ? 'success' : 'empty',
+        count: results.length,
+        message:
+          results.length > 0
+            ? `${results.length} livro(s)`
+            : providerId === 'brasilapi' && !cleanIsbn
+            ? 'Requer ISBN'
+            : '0 livros',
+      });
+
+      return results;
+    } catch (err: any) {
+      console.warn(`Erro na API ${providerId}:`, err);
+      callbacks?.onProviderStatus?.(providerId, {
+        providerId,
+        providerName: meta?.name || providerId,
+        providerBadge: meta?.badge || providerId,
+        state: 'error',
+        count: 0,
+        message: 'Tempo esgotado / Falha',
+      });
+      return [];
+    }
+  });
+
+  await Promise.allSettled(tasks);
+  return accumulated;
+}
+
+export interface StreamCoverSearchCallbacks {
+  onProviderStatus?: (providerId: ApiProviderId, status: ApiSearchStatus) => void;
+  onIncrementalCovers?: (newCovers: CoverOption[], allCovers: CoverOption[]) => void;
+}
+
+/**
+ * Searches covers only from user-selected APIs in parallel, streaming each API's
+ * discovered covers to the UI immediately.
+ */
+export async function searchCoversStream(
+  title: string,
+  author?: string,
+  isbn?: string,
+  selectedProviders: ApiProviderId[] = ['openlibrary', 'google'],
+  callbacks?: StreamCoverSearchCallbacks
+): Promise<CoverOption[]> {
+  const cleanIsbn = isbn ? isbn.replace(/[^0-9X]/gi, '') : '';
+  const query = `${title} ${author || ''}`.trim();
+
+  const accumulatedCovers: CoverOption[] = [];
+  const seenUrls = new Set<string>();
+
+  const appendCovers = (newCovers: CoverOption[]) => {
+    const freshlyAdded: CoverOption[] = [];
+    for (const c of newCovers) {
+      if (c.url && !seenUrls.has(c.url)) {
+        seenUrls.add(c.url);
+        accumulatedCovers.push(c);
+        freshlyAdded.push(c);
+      }
+    }
+    if (freshlyAdded.length > 0 && callbacks?.onIncrementalCovers) {
+      callbacks.onIncrementalCovers(freshlyAdded, [...accumulatedCovers]);
+    }
+  };
+
+  // Set initial 'searching' state for all chosen providers
+  selectedProviders.forEach((pId) => {
+    const meta = SELECTABLE_API_PROVIDERS.find((p) => p.id === pId);
+    callbacks?.onProviderStatus?.(pId, {
+      providerId: pId,
+      providerName: meta?.name || pId,
+      providerBadge: meta?.badge || pId,
+      state: 'searching',
+      count: 0,
+    });
+  });
+
+  const tasks = selectedProviders.map(async (providerId) => {
+    const meta = SELECTABLE_API_PROVIDERS.find((p) => p.id === providerId);
+    const providerCovers: CoverOption[] = [];
+
+    try {
+      if (providerId === 'openlibrary') {
+        if (cleanIsbn) {
+          try {
+            const bibKey = `ISBN:${cleanIsbn}`;
+            const res = await fetchWithTimeout(
+              `https://openlibrary.org/api/books?bibkeys=${bibKey}&format=json&jscmd=data`,
+              4000
+            );
+            if (res.ok) {
+              const data = await res.json();
+              const item = data[bibKey];
+              const url = item?.cover?.large || item?.cover?.medium;
+              if (url) {
+                providerCovers.push({
+                  id: `ol-isbn-${cleanIsbn}`,
+                  url,
+                  source: 'openlibrary',
+                  sourceName: 'Open Library',
+                  sourceBadge: '🏛️ Open Library (ISBN)',
+                  title: item.title || title,
+                  authors: author,
+                  editionYear: item.publish_date,
+                });
+              }
+            }
+          } catch {}
+        }
+
+        if (query) {
+          try {
+            const res = await fetchWithTimeout(
+              `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=8`,
+              4000
+            );
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data.docs)) {
+                data.docs.forEach((doc: any, idx: number) => {
+                  if (doc.cover_i) {
+                    providerCovers.push({
+                      id: `ol-doc-${doc.cover_i}-${idx}`,
+                      url: `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`,
+                      source: 'openlibrary',
+                      sourceName: 'Open Library',
+                      sourceBadge: '🏛️ Open Library',
+                      title: doc.title || title,
+                      authors: doc.author_name?.[0] || author,
+                      editionYear: doc.first_publish_year ? String(doc.first_publish_year) : undefined,
+                    });
+                  } else if (doc.isbn && doc.isbn[0]) {
+                    providerCovers.push({
+                      id: `ol-isbn-cover-${doc.isbn[0]}-${idx}`,
+                      url: `https://covers.openlibrary.org/b/isbn/${doc.isbn[0]}-L.jpg`,
+                      source: 'openlibrary',
+                      sourceName: 'Open Library',
+                      sourceBadge: '🏛️ Open Library',
+                      title: doc.title || title,
+                      authors: doc.author_name?.[0] || author,
+                      editionYear: doc.first_publish_year ? String(doc.first_publish_year) : undefined,
+                    });
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      } else if (providerId === 'google') {
+        const searchParam = cleanIsbn ? `isbn:${cleanIsbn}` : query;
+        if (searchParam) {
+          try {
+            const gUrl = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(searchParam)}&maxResults=6`;
+            const res = await fetchWithTimeout(gUrl, 4000);
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data.items)) {
+                data.items.forEach((item: any) => {
+                  const info = item.volumeInfo || {};
+                  let link = info.imageLinks?.thumbnail || info.imageLinks?.smallThumbnail;
+                  if (link) {
+                    link = link.replace(/^http:\/\//i, 'https://').replace('&edge=curl', '');
+                    providerCovers.push({
+                      id: `google-${item.id}`,
+                      url: link,
+                      source: 'google',
+                      sourceName: 'Google Livros',
+                      sourceBadge: '🔍 Google Books',
+                      title: info.title || title,
+                      authors: Array.isArray(info.authors) ? info.authors.join(', ') : author,
+                      editionYear: info.publishedDate ? info.publishedDate.substring(0, 4) : undefined,
+                    });
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      } else if (providerId === 'brasilapi') {
+        if (cleanIsbn) {
+          try {
+            const res = await fetchWithTimeout(`https://brasilapi.com.br/api/isbn/v1/${cleanIsbn}`, 4000);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.cover_url) {
+                providerCovers.push({
+                  id: `brasilapi-${cleanIsbn}`,
+                  url: data.cover_url,
+                  source: 'brasilapi',
+                  sourceName: 'Brasil API',
+                  sourceBadge: '🇧🇷 Brasil API (CBL)',
+                  title: data.title || title,
+                  authors: Array.isArray(data.authors) ? data.authors.join(', ') : author,
+                  editionYear: data.year ? String(data.year) : undefined,
+                });
+              }
+            }
+          } catch {}
+        }
+      } else if (providerId === 'gutendex') {
+        if (title) {
+          try {
+            const res = await fetchWithTimeout(
+              `https://gutendex.com/books/?search=${encodeURIComponent(title)}`,
+              4000
+            );
+            if (res.ok) {
+              const data = await res.json();
+              if (Array.isArray(data.results)) {
+                data.results.slice(0, 3).forEach((item: any) => {
+                  const coverUrl = item.formats?.['image/jpeg'];
+                  if (coverUrl) {
+                    providerCovers.push({
+                      id: `guten-${item.id}`,
+                      url: coverUrl,
+                      source: 'gutendex',
+                      sourceName: 'Gutenberg',
+                      sourceBadge: '📖 Gutenberg',
+                      title: item.title || title,
+                      authors: item.authors?.[0]?.name || author,
+                    });
+                  }
+                });
+              }
+            }
+          } catch {}
+        }
+      }
+
+      // Stream newly found covers immediately
+      appendCovers(providerCovers);
+
+      callbacks?.onProviderStatus?.(providerId, {
+        providerId,
+        providerName: meta?.name || providerId,
+        providerBadge: meta?.badge || providerId,
+        state: providerCovers.length > 0 ? 'success' : 'empty',
+        count: providerCovers.length,
+        message:
+          providerCovers.length > 0
+            ? `${providerCovers.length} capa(s)`
+            : providerId === 'brasilapi' && !cleanIsbn
+            ? 'Requer ISBN'
+            : '0 capas',
+      });
+    } catch (err: any) {
+      console.warn(`Erro na API de capas ${providerId}:`, err);
+      callbacks?.onProviderStatus?.(providerId, {
+        providerId,
+        providerName: meta?.name || providerId,
+        providerBadge: meta?.badge || providerId,
+        state: 'error',
+        count: 0,
+        message: 'Tempo esgotado / Falha',
+      });
+    }
+  });
+
+  await Promise.allSettled(tasks);
+  return accumulatedCovers;
+}

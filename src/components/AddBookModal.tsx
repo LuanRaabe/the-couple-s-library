@@ -16,10 +16,21 @@ import {
   Trash2,
   CheckCircle2,
   AlertCircle,
-  Barcode
+  Barcode,
+  Check
 } from 'lucide-react';
-import { Book, BookStatus, ReaderId, LibrarySettings, GoogleBookSearchResult } from '@/features/books';
-import { searchBooks, BookSearchProvider, fetchBookByOpenLibraryIsbn } from '@/features/books';
+import { 
+  Book, 
+  BookStatus, 
+  ReaderId, 
+  LibrarySettings, 
+  GoogleBookSearchResult,
+  searchBooksStream, 
+  SELECTABLE_API_PROVIDERS, 
+  ApiProviderId, 
+  ApiSearchStatus,
+  fetchBookByOpenLibraryIsbn 
+} from '@/features/books';
 import { compressImageFile, formatFileSize } from '../utils/imageCompressor';
 
 interface AddBookModalProps {
@@ -39,8 +50,18 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'search' | 'manual'>('search');
 
-  // Search tab states
-  const [searchProvider, setSearchProvider] = useState<BookSearchProvider>('all');
+  // Search tab states with multi-API selection and streaming
+  const [selectedApis, setSelectedApis] = useState<ApiProviderId[]>(() => {
+    try {
+      const saved = localStorage.getItem('nossa_estante_selected_book_apis');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {}
+    return ['openlibrary', 'google'];
+  });
+  const [apiStatuses, setApiStatuses] = useState<Record<string, ApiSearchStatus>>({});
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -141,19 +162,83 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
     }
   };
 
+  const toggleApi = (id: ApiProviderId) => {
+    setSelectedApis((prev) => {
+      let next: ApiProviderId[];
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev; // Keep at least one selected
+        next = prev.filter((p) => p !== id);
+      } else {
+        next = [...prev, id];
+      }
+      try {
+        localStorage.setItem('nossa_estante_selected_book_apis', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  const selectAllApis = () => {
+    const all: ApiProviderId[] = ['openlibrary', 'google', 'brasilapi', 'gutendex'];
+    setSelectedApis(all);
+    try {
+      localStorage.setItem('nossa_estante_selected_book_apis', JSON.stringify(all));
+    } catch {}
+  };
+
+  const selectOnlyOpenLibrary = () => {
+    const only: ApiProviderId[] = ['openlibrary'];
+    setSelectedApis(only);
+    try {
+      localStorage.setItem('nossa_estante_selected_book_apis', JSON.stringify(only));
+    } catch {}
+  };
+
+  const selectFastestApis = () => {
+    const fast: ApiProviderId[] = ['openlibrary', 'google'];
+    setSelectedApis(fast);
+    try {
+      localStorage.setItem('nossa_estante_selected_book_apis', JSON.stringify(fast));
+    } catch {}
+  };
+
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || selectedApis.length === 0) return;
 
     setIsSearching(true);
     setHasSearched(true);
     setSearchError(null);
+    setSearchResults([]); // Fresh results stream
+
+    const initialStatuses: Record<string, ApiSearchStatus> = {};
+    selectedApis.forEach((pId) => {
+      const meta = SELECTABLE_API_PROVIDERS.find((p) => p.id === pId);
+      initialStatuses[pId] = {
+        providerId: pId,
+        providerName: meta?.name || pId,
+        providerBadge: meta?.badge || pId,
+        state: 'searching',
+        count: 0,
+      };
+    });
+    setApiStatuses(initialStatuses);
+
     try {
-      const results = await searchBooks(searchQuery, searchProvider);
-      setSearchResults(results);
+      await searchBooksStream(searchQuery, selectedApis, {
+        onProviderStatus: (providerId, status) => {
+          setApiStatuses((prev) => ({
+            ...prev,
+            [providerId]: status,
+          }));
+        },
+        onIncrementalResults: (_newItems, allAccumulated) => {
+          setSearchResults([...allAccumulated]);
+        },
+      });
     } catch (err: any) {
-      console.error(err);
-      setSearchError('Erro ao consultar a API. Tente outro provedor ou faça o cadastro manual.');
+      console.error('Erro na busca streaming de livros:', err);
+      setSearchError('Ocorreu uma falha ao consultar as APIs selecionadas.');
     } finally {
       setIsSearching(false);
     }
@@ -452,87 +537,80 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
         <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
           {activeTab === 'search' ? (
             <div>
-              {/* Provider selector */}
-              <div className="flex flex-col gap-2 mb-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-stone-600 dark:text-stone-400">
-                    Fonte de pesquisa:
-                  </span>
-                  <span className="text-[10px] text-stone-400">
-                    {searchProvider === 'all' && '⚡ Busca em simultâneo no Google Livros, Open Library, Gutenberg e Brasil API'}
-                    {searchProvider === 'google' && 'Google Books API (Catálogo Geral & Capas)'}
-                    {searchProvider === 'openlibrary' && 'Open Library / Internet Archive (100% Gratuito & Aberto)'}
-                    {searchProvider === 'gutendex' && 'Gutendex (Literatura clássica em domínio público)'}
-                    {searchProvider === 'brasilapi' && 'Brasil API (Busca direta por código ISBN brasileiro)'}
-                  </span>
+              {/* Multi-API Provider Selector */}
+              <div className="flex flex-col gap-2.5 mb-3.5 p-3 rounded-2xl bg-stone-50 dark:bg-stone-850 border border-stone-200/80 dark:border-stone-800">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span className="text-xs font-bold text-stone-800 dark:text-stone-200">
+                      Selecione onde buscar ({selectedApis.length} de {SELECTABLE_API_PROVIDERS.length} ativas):
+                    </span>
+                  </div>
+                  
+                  {/* Preset Quick Buttons */}
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={selectOnlyOpenLibrary}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white dark:bg-stone-800 text-sky-700 dark:text-sky-300 border border-stone-200 dark:border-stone-700 hover:border-sky-400 transition-colors cursor-pointer"
+                      title="Usa apenas a Open Library: resposta ultra-rápida sem esperar por outras fontes"
+                    >
+                      ⚡ Só Open Library
+                    </button>
+                    <button
+                      type="button"
+                      onClick={selectFastestApis}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white dark:bg-stone-800 text-amber-700 dark:text-amber-300 border border-stone-200 dark:border-stone-700 hover:border-amber-400 transition-colors cursor-pointer"
+                    >
+                      🚀 Open Library + Google
+                    </button>
+                    <button
+                      type="button"
+                      onClick={selectAllApis}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 hover:border-amber-400 transition-colors cursor-pointer"
+                    >
+                      🌐 Todas (4)
+                    </button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setSearchProvider('all')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                      searchProvider === 'all'
-                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/80 dark:text-purple-200 font-bold border border-purple-300 dark:border-purple-700'
-                        : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-200'
-                    }`}
-                  >
-                    <Sparkles className="w-3 h-3 text-purple-600" />
-                    Multi-Busca (Todas)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSearchProvider('google')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                      searchProvider === 'google'
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-200 font-bold border border-amber-300 dark:border-amber-700'
-                        : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-200'
-                    }`}
-                  >
-                    <Globe className="w-3 h-3 text-amber-600" />
-                    Google Livros
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSearchProvider('openlibrary')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                      searchProvider === 'openlibrary'
-                        ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-200 font-bold border border-sky-300 dark:border-sky-700'
-                        : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-200'
-                    }`}
-                  >
-                    <Library className="w-3 h-3 text-sky-600" />
-                    Open Library
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSearchProvider('gutendex')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                      searchProvider === 'gutendex'
-                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200 font-bold border border-amber-300 dark:border-amber-700'
-                        : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-200'
-                    }`}
-                  >
-                    <BookOpen className="w-3 h-3 text-amber-700" />
-                    Gutenberg
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSearchProvider('brasilapi')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                      searchProvider === 'brasilapi'
-                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-200 font-bold border border-emerald-300 dark:border-emerald-700'
-                        : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:bg-stone-200'
-                    }`}
-                  >
-                    <span>🇧🇷</span>
-                    Brasil API (ISBN)
-                  </button>
+
+                {/* API Checkbox / Pill buttons */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                  {SELECTABLE_API_PROVIDERS.map((provider) => {
+                    const isSelected = selectedApis.includes(provider.id);
+                    return (
+                      <button
+                        key={provider.id}
+                        type="button"
+                        onClick={() => toggleApi(provider.id)}
+                        className={`p-2 rounded-xl text-left border transition-all flex items-start justify-between cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-100 shadow-xs'
+                            : 'bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-500 opacity-60 hover:opacity-100'
+                        }`}
+                        title={provider.description}
+                      >
+                        <div className="min-w-0 pr-1">
+                          <div className="flex items-center gap-1 font-bold text-xs truncate">
+                            <span>{provider.badge}</span>
+                          </div>
+                          <p className="text-[10px] text-stone-500 dark:text-stone-400 truncate mt-0.5">
+                            {provider.fastest ? '⚡ Ultra rápida' : provider.id === 'brasilapi' ? 'Oficial CBL (ISBN)' : provider.id === 'google' ? 'Catálogo amplo' : 'Domínio público'}
+                          </p>
+                        </div>
+                        <div className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
+                          isSelected ? 'bg-amber-600 text-white' : 'border border-stone-300 dark:border-stone-600'
+                        }`}>
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-
               {/* Search input form */}
-              <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+              <form onSubmit={handleSearch} className="flex gap-2 mb-3">
                 <div className="relative flex-1">
                   <Search className="w-4 h-4 absolute left-3 top-3 text-stone-400" />
                   <input
@@ -540,7 +618,7 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={
-                      searchProvider === 'brasilapi'
+                      selectedApis.length === 1 && selectedApis[0] === 'brasilapi'
                         ? 'Digite o código ISBN (ex: 9788535914849)'
                         : 'Digite título, autor ou ISBN (ex: Torto Arado, Jane Austen...)'
                     }
@@ -550,13 +628,65 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
                 </div>
                 <button
                   type="submit"
-                  disabled={isSearching || !searchQuery.trim()}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0"
+                  disabled={isSearching || !searchQuery.trim() || selectedApis.length === 0}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
                 >
                   {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
                   <span>Buscar</span>
                 </button>
               </form>
+
+              {/* Real-Time API Status Bar (Live indicators of each API as it returns) */}
+              {(isSearching || hasSearched) && Object.keys(apiStatuses).length > 0 && (
+                <div className="mb-3.5 p-2.5 rounded-xl bg-stone-100/70 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700/80 space-y-1.5 animate-in fade-in">
+                  <div className="flex items-center justify-between text-[11px] font-semibold text-stone-600 dark:text-stone-300 px-0.5">
+                    <span>Status das APIs em tempo real:</span>
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+                      {searchResults.length} livro(s) encontrado(s) até agora
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedApis.map((pId) => {
+                      const st = apiStatuses[pId];
+                      if (!st) return null;
+                      const isWorking = st.state === 'searching';
+                      const isSuccess = st.state === 'success';
+                      const isError = st.state === 'error';
+                      const isEmpty = st.state === 'empty';
+
+                      return (
+                        <div
+                          key={pId}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-all ${
+                            isWorking
+                              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 animate-pulse'
+                              : isSuccess
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                              : isError
+                              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200'
+                              : 'bg-stone-50 dark:bg-stone-900 border-stone-200 dark:border-stone-750 text-stone-500'
+                          }`}
+                        >
+                          {isWorking && <Loader2 className="w-3 h-3 animate-spin text-amber-600 shrink-0" />}
+                          {isSuccess && <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />}
+                          {isError && <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />}
+                          {isEmpty && <span className="w-1.5 h-1.5 rounded-full bg-stone-400 shrink-0" />}
+                          
+                          <span className="font-semibold">{st.providerName}:</span>
+                          <span>
+                            {isWorking
+                              ? 'Buscando...'
+                              : isSuccess
+                              ? `${st.count} livro(s)`
+                              : st.message || (isEmpty ? '0 resultados' : 'Erro')}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {searchError && (
                 <div className="p-3 mb-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2">
@@ -565,19 +695,24 @@ export const AddBookModal: React.FC<AddBookModalProps> = ({
                 </div>
               )}
 
-              {/* Results list */}
-              {isSearching ? (
+              {/* Incremental Results List */}
+              {isSearching && searchResults.length === 0 ? (
                 <div className="py-16 text-center text-stone-400 space-y-2">
                   <Loader2 className="w-8 h-8 animate-spin mx-auto text-amber-600" />
                   <p className="text-xs">
-                    {searchProvider === 'google' && 'Consultando Google Livros...'}
-                    {searchProvider === 'openlibrary' && 'Consultando catálogo aberto do Open Library...'}
-                    {searchProvider === 'brasilapi' && 'Consultando base de ISBN da Brasil API...'}
-                    {searchProvider === 'all' && 'Consultando catálogo online em múltiplas fontes...'}
+                    Consultando APIs selecionadas ({selectedApis.length})...
                   </p>
                 </div>
               ) : searchResults.length > 0 ? (
                 <div className="space-y-3">
+                  {isSearching && (
+                    <div className="p-2 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                        <span>Carregando mais resultados em segundo plano... Você já pode selecionar qualquer livro abaixo!</span>
+                      </div>
+                    </div>
+                  )}
                   {searchResults.map((item) => (
                     <div
                       key={item.id}

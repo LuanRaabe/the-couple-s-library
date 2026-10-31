@@ -8,6 +8,8 @@ interface LoginPageProps {
   onOpenDebugMenu: () => void;
   eleName?: string;
   elaName?: string;
+  sessionExpired?: boolean;
+  sessionExpiredReason?: string | null;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
@@ -16,6 +18,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   onOpenDebugMenu,
   eleName = 'Luan',
   elaName = 'Theresa',
+  sessionExpired,
+  sessionExpiredReason,
 }) => {
   const isPreview = isDevOrPreview();
   const dbTarget = getDbTarget();
@@ -51,6 +55,19 @@ export const LoginPage: React.FC<LoginPageProps> = ({
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6">
         <div className="w-full max-w-md bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 shadow-xl border border-stone-200/80 dark:border-stone-800 text-center space-y-6">
           
+          {/* Session Expired Reauthentication Alert */}
+          {sessionExpired && (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 text-left space-y-1.5 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 text-amber-900 dark:text-amber-200 font-bold text-xs">
+                <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Sessão expirada por inatividade</span>
+              </div>
+              <p className="text-[11px] text-amber-800/90 dark:text-amber-300 leading-relaxed">
+                {sessionExpiredReason || 'Para sua segurança e garantir que as gravações continuem funcionando, faça login novamente com o Google. Seus rascunhos continuam salvos no navegador!'}
+              </p>
+            </div>
+          )}
+
           {/* Couple Badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-50 dark:bg-rose-950/60 border border-rose-200/60 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs font-semibold">
             <Heart className="w-3.5 h-3.5 fill-rose-500 text-rose-500 animate-pulse" />

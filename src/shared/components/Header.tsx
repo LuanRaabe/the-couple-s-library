@@ -6,6 +6,7 @@ import {
   LogIn, 
   LogOut, 
   RefreshCw,
+  Loader2,
   ShieldAlert,
   Menu
 } from 'lucide-react';
@@ -111,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
                 {/* Saving Indicator */}
                 {isSyncing && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                    <RefreshCw className="w-3 h-3 text-amber-600 animate-spin" />
+                    <Loader2 className="w-3 h-3 text-amber-600 animate-spin" />
                     <span>Salvando...</span>
                   </span>
                 )}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, RotateCcw, AlertCircle, Check, X } from 'lucide-react';
+import { Save, Loader2, AlertCircle, Check, X, RotateCcw } from 'lucide-react';
 import { Book, BatchProgressCallback, BatchSaveResult } from '@/features/books';
 import { useSessionDrafts } from '@/core/session/draft';
 
@@ -172,7 +172,7 @@ export const FloatingBatchSaveBar: React.FC<FloatingBatchSaveBarProps> = ({
           >
             {isSaving ? (
               <>
-                <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Salvando ({draftCount})...</span>
               </>
             ) : (
@@ -217,7 +217,7 @@ export const FloatingBatchSaveBar: React.FC<FloatingBatchSaveBarProps> = ({
               <div className="flex justify-between text-xs font-medium text-stone-700 dark:text-stone-300">
                 <span className="flex items-center gap-2">
                   {!batchSaveDone ? (
-                    <RotateCcw className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
                   ) : (
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
                   )}

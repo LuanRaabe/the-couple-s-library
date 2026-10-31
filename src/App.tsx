@@ -4,385 +4,102 @@
  */
 
 import React, { useState } from 'react';
-import { RefreshCw, Heart } from 'lucide-react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
-// FDD Feature Hooks & Types
+// Auth Feature & Guard
 import { useAuth } from '@/features/auth';
-import { useLibrarySettings, SettingsModal } from '@/features/settings';
-import { useBooks, useBookFilters, useBackgroundCoverSync, Book } from '@/features/books';
+import { LoginPage } from '@/features/auth/pages/LoginPage';
+import { ProtectedRoute } from '@/shared/components/ProtectedRoute';
 
-// Shared Components
-import { Header } from '@/shared/components/Header';
-import { NavigationFilterBar, ActiveTab } from '@/shared/components/NavigationFilterBar';
-import { NavigationSidebar } from '@/shared/components/NavigationSidebar';
-import { NotificationToast } from '@/shared/components/NotificationToast';
+// Layout Shell
+import { AppLayout } from '@/shared/layouts/AppLayout';
 
-// Feature Views, Modals & Gate Screens
-import { LoginPage } from '@/components/LoginPage';
+// Feature Pages (FDD Architecture)
+import { BooksPage } from '@/features/books/pages/BooksPage';
+import { BookNewPage } from '@/features/books/pages/BookNewPage';
+import { BookDetailPage } from '@/features/books/pages/BookDetailPage';
+import { BookEditPage } from '@/features/books/pages/BookEditPage';
+import { RecommendationsPage } from '@/features/recommendations/pages/RecommendationsPage';
+import { StatsPage } from '@/features/stats/pages/StatsPage';
+import { SettingsPage } from '@/features/settings/pages/SettingsPage';
+
+// Settings & Debug
+import { useLibrarySettings } from '@/features/settings';
 import { DebugMenu } from '@/components/DebugMenu';
-import { BookGrid } from '@/components/BookGrid';
-import { BookTable } from '@/components/BookTable';
-import { BookKanban } from '@/components/BookKanban';
-import { RecommendationsView } from '@/components/RecommendationsView';
-import { StatsView } from '@/components/StatsView';
-import { AddBookModal } from '@/components/AddBookModal';
-import { BookDetailModal } from '@/components/BookDetailModal';
-import { BatchCoverSyncModal } from '@/components/BatchCoverSyncModal';
-import { BackgroundSyncFloatingWidget } from '@/components/BackgroundSyncFloatingWidget';
-import { FloatingBatchSaveBar } from '@/shared/components/FloatingBatchSaveBar';
 
 export default function App() {
-  // Auth feature slice with maintenance bypass capability
   const { 
     currentUser, 
-    isMaintenanceMode,
-    authInitialized,
-    loginWithGoogle, 
-    logoutUser,
-    enableMaintenanceBypass,
-    disableMaintenanceBypass,
+    enableMaintenanceBypass, 
+    disableMaintenanceBypass, 
+    isMaintenanceMode 
   } = useAuth();
-
-  // State trigger to re-read Firestore when DB collection target changes in Debug Menu
-  const [dbTargetTrigger, setDbTargetTrigger] = useState<number>(0);
-
-  // Settings feature slice
-  const { settings, saveSettings } = useLibrarySettings(currentUser);
-
-  // Books feature slice
-  const {
-    books,
-    isLoading,
-    isSyncing,
-    errorNotice,
-    setErrorNotice,
-    saveNotice,
-    setSaveNotice,
-    seedNotice,
-    setSeedNotice,
-    handleUpdateStatus,
-    handleUpdateReader,
-    handleToggleFavorite,
-    handleToggleOwned,
-    handleAddBook,
-    handleUpdateBook,
-    handleBatchUpdateBooks,
-    handleSyncProductionSpreadsheet,
-    handleDeleteBook,
-  } = useBooks(currentUser, dbTargetTrigger);
-
-  // Books search & filtering slice
-  const {
-    searchQuery,
-    setSearchQuery,
-    readerFilter,
-    setReaderFilter,
-    statusFilter,
-    setStatusFilter,
-    ownershipFilter,
-    setOwnershipFilter,
-    filteredBooks,
-    readCount,
-    wishlistCount,
-    ownedCount,
-  } = useBookFilters(books);
-
-  // Navigation tab persisted across reloads in localStorage
-  const [currentTab, setCurrentTab] = useState<ActiveTab>(() => {
-    try {
-      const saved = localStorage.getItem('nossa_estante_active_tab');
-      if (saved && ['grid', 'table', 'kanban', 'recommendations', 'stats'].includes(saved)) {
-        return saved as ActiveTab;
-      }
-    } catch {
-      // ignore
-    }
-    return 'grid';
-  });
-
-  const handleSelectTab = (tab: ActiveTab) => {
-    setCurrentTab(tab);
-    try {
-      localStorage.setItem('nossa_estante_active_tab', tab);
-    } catch {
-      // ignore
-    }
-  };
-
-  // Reader context for detail modal annotations/sessions
-  const [activeReader, setActiveReader] = useState<'ele' | 'ela'>(() => {
-    return (localStorage.getItem('nossa_estante_active_reader') as 'ele' | 'ela') || 'ele';
-  });
-
-  // Modal & Sidebar states
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isSyncCoversModalOpen, setIsSyncCoversModalOpen] = useState(false);
+  
+  const { settings } = useLibrarySettings(currentUser);
   const [isDebugMenuOpen, setIsDebugMenuOpen] = useState(false);
-  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
 
-  // Background cover synchronization
-  const coverSync = useBackgroundCoverSync();
-
-  // 1. Initial Auth Loading Gate
-  if (!authInitialized) {
-    return (
-      <div className="min-h-screen bg-[#faf8f5] dark:bg-stone-950 flex flex-col items-center justify-center p-4">
-        <RefreshCw className="w-8 h-8 animate-spin text-amber-600 mb-3" />
-        <p className="font-serif text-sm text-stone-500">
-          Carregando Nossa Estante...
-        </p>
-      </div>
-    );
-  }
-
-  // 2. Mandatory Login Screen Gate (Books are only accessible after authentication or maintenance bypass)
-  if (!currentUser) {
-    return (
-      <>
-        <LoginPage
-          onLogin={loginWithGoogle}
-          onEnableMaintenance={enableMaintenanceBypass}
-          onOpenDebugMenu={() => setIsDebugMenuOpen(true)}
-          eleName={settings.eleName}
-          elaName={settings.elaName}
-        />
-
-        <DebugMenu
-          isOpen={isDebugMenuOpen}
-          onClose={() => setIsDebugMenuOpen(false)}
-          isMaintenanceMode={isMaintenanceMode}
-          onEnableMaintenance={enableMaintenanceBypass}
-          onDisableMaintenance={disableMaintenanceBypass}
-          onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
-          onSyncProductionSpreadsheet={handleSyncProductionSpreadsheet}
-        />
-      </>
-    );
-  }
-
-  // 3. Authenticated Bookshelf Experience
   return (
-    <div className="min-h-screen bg-[#faf8f5] dark:bg-stone-950 text-stone-800 dark:text-stone-200 flex flex-col font-sans selection:bg-amber-200 dark:selection:bg-amber-900 selection:text-amber-950">
-      
-      {/* Header with Lateral Sanduíche Button */}
-      <Header
-        settings={settings}
-        currentUser={currentUser}
-        onLogin={loginWithGoogle}
-        onLogout={logoutUser}
-        onOpenAddModal={() => setIsAddModalOpen(true)}
-        onOpenSidebar={() => setIsSidebarOpen(true)}
-        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        onOpenSyncCoversModal={() => setIsSyncCoversModalOpen(true)}
-        totalBooks={books.length}
-        readCount={readCount}
-        isSyncing={isSyncing}
+    <BrowserRouter>
+      <Routes>
+        {/* Public Routes */}
+        <Route
+          path="/login"
+          element={
+            <LoginPage
+              settings={settings}
+              onOpenDebugMenu={() => setIsDebugMenuOpen(true)}
+            />
+          }
+        />
+        <Route
+          path="/auth/login"
+          element={<Navigate to="/login" replace />}
+        />
+
+        {/* Protected Routes enclosed in AppLayout Shell */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <AppLayout />
+            </ProtectedRoute>
+          }
+        >
+          {/* Root Redirect: / -> /books */}
+          <Route path="/" element={<Navigate to="/books" replace />} />
+
+          {/* Books Feature Routes */}
+          <Route path="/books" element={<BooksPage />} />
+          <Route path="/books/new" element={<BookNewPage />} />
+          <Route path="/books/:bookId" element={<BookDetailPage />} />
+          <Route path="/books/:bookId/edit" element={<BookEditPage />} />
+          <Route path="/books/:bookId/notes" element={<BookDetailPage />} />
+          <Route path="/books/:bookId/annotations" element={<BookDetailPage />} />
+
+          {/* Recommendations Feature Route */}
+          <Route path="/recommendations" element={<RecommendationsPage />} />
+
+          {/* Stats Feature Route */}
+          <Route path="/stats" element={<StatsPage />} />
+
+          {/* Settings Feature Routes */}
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/profile" element={<SettingsPage />} />
+        </Route>
+
+        {/* Fallback Catch-All */}
+        <Route path="*" element={<Navigate to="/books" replace />} />
+      </Routes>
+
+      {/* Debug Menu Accessible on Login / Gate Screen */}
+      <DebugMenu
+        isOpen={isDebugMenuOpen}
+        onClose={() => setIsDebugMenuOpen(false)}
         isMaintenanceMode={isMaintenanceMode}
-        onOpenDebugMenu={() => setIsDebugMenuOpen(true)}
+        onEnableMaintenance={enableMaintenanceBypass}
+        onDisableMaintenance={disableMaintenanceBypass}
+        onDbTargetChanged={() => window.location.reload()}
+        onSyncProductionSpreadsheet={async () => {}}
       />
-
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-        
-        {/* Global Notifications */}
-        <NotificationToast
-          saveNotice={saveNotice}
-          onCloseSaveNotice={() => setSaveNotice(null)}
-          seedNotice={seedNotice}
-          onCloseSeedNotice={() => setSeedNotice(null)}
-          errorNotice={errorNotice}
-          onCloseErrorNotice={() => setErrorNotice(null)}
-        />
-
-        {/* Navigation Filter Bar */}
-        <NavigationFilterBar
-          currentTab={currentTab}
-          onOpenSidebar={() => setIsSidebarOpen(true)}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          readerFilter={readerFilter}
-          onReaderFilterChange={setReaderFilter}
-          statusFilter={statusFilter}
-          onStatusFilterChange={setStatusFilter}
-          ownershipFilter={ownershipFilter}
-          onOwnershipFilterChange={setOwnershipFilter}
-          wishlistCount={wishlistCount}
-          ownedCount={ownedCount}
-          settings={settings}
-        />
-
-        {/* Dynamic View rendering based on currentTab */}
-        {isLoading ? (
-          <div className="py-24 text-center space-y-3">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600" />
-            <p className="font-serif text-sm text-stone-500">
-              Conectando à estante em tempo real...
-            </p>
-          </div>
-        ) : (
-          <>
-            {currentTab === 'grid' && (
-              <BookGrid
-                books={filteredBooks}
-                settings={settings}
-                onSelectBook={(b) => setSelectedBook(b)}
-                onUpdateStatus={handleUpdateStatus}
-                onToggleFavorite={handleToggleFavorite}
-                onToggleOwned={handleToggleOwned}
-              />
-            )}
-
-            {currentTab === 'table' && (
-              <BookTable
-                books={filteredBooks}
-                settings={settings}
-                onSelectBook={(b) => setSelectedBook(b)}
-                onUpdateStatus={handleUpdateStatus}
-                onUpdateReader={handleUpdateReader}
-                onUpdateBook={handleUpdateBook}
-                onBatchUpdateBooks={handleBatchUpdateBooks}
-                onDeleteBook={handleDeleteBook}
-                onToggleFavorite={handleToggleFavorite}
-                onToggleOwned={handleToggleOwned}
-              />
-            )}
-
-            {currentTab === 'kanban' && (
-              <BookKanban
-                books={filteredBooks}
-                settings={settings}
-                onSelectBook={(b) => setSelectedBook(b)}
-                onUpdateStatus={handleUpdateStatus}
-                onOpenAddModal={() => setIsAddModalOpen(true)}
-              />
-            )}
-
-            {currentTab === 'recommendations' && (
-              <RecommendationsView
-                books={books}
-                settings={settings}
-                activeReader={activeReader}
-                onSelectBook={(b) => setSelectedBook(b)}
-                onOpenAddModal={() => setIsAddModalOpen(true)}
-              />
-            )}
-
-            {currentTab === 'stats' && (
-              <StatsView
-                books={books}
-                settings={settings}
-                onSelectBook={(b) => setSelectedBook(b)}
-              />
-            )}
-          </>
-        )}
-      </main>
-
-      {/* Footer */}
-      <footer className="mt-auto py-6 border-t border-stone-200/60 dark:border-stone-800/80 text-center text-xs text-stone-400">
-        <p className="flex items-center justify-center gap-1">
-          Nossa Estante • Feito com carinho para {settings.eleName} & {settings.elaName}
-          <Heart className="w-3 h-3 text-rose-500 fill-rose-500 inline" />
-        </p>
-      </footer>
-
-      {/* Lateral Navigation Sidebar (Desktop drawer / Mobile tab selection modal) */}
-      <NavigationSidebar
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        currentTab={currentTab}
-        onSelectTab={handleSelectTab}
-        settings={settings}
-        totalBooks={books.length}
-        readCount={readCount}
-        currentUser={currentUser}
-        onOpenAddModal={() => setIsAddModalOpen(true)}
-        onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
-        onOpenSyncCoversModal={() => setIsSyncCoversModalOpen(true)}
-        onOpenDebugMenu={() => setIsDebugMenuOpen(true)}
-        onLogout={logoutUser}
-      />
-
-      {/* Modals - Conditionally rendered to guarantee constant hooks and clean unmounting */}
-      {isAddModalOpen && (
-        <AddBookModal
-          isOpen={true}
-          onClose={() => setIsAddModalOpen(false)}
-          onAddBook={handleAddBook}
-          settings={settings}
-          activeReader={activeReader}
-        />
-      )}
-
-      {selectedBook && (
-        <BookDetailModal
-          book={selectedBook}
-          isOpen={true}
-          onClose={() => setSelectedBook(null)}
-          settings={settings}
-          activeReader={activeReader}
-          onUpdateBook={handleUpdateBook}
-          onDeleteBook={handleDeleteBook}
-        />
-      )}
-
-      {isSettingsModalOpen && (
-        <SettingsModal
-          isOpen={true}
-          onClose={() => setIsSettingsModalOpen(false)}
-          settings={settings}
-          onSaveSettings={saveSettings}
-        />
-      )}
-
-      {isSyncCoversModalOpen && (
-        <BatchCoverSyncModal
-          isOpen={true}
-          onClose={() => setIsSyncCoversModalOpen(false)}
-          syncState={coverSync}
-          books={books}
-          onUpdateBook={handleUpdateBook}
-          onSyncCompleted={(updated) => {
-            if (updated > 0) {
-              setSaveNotice(`🎉 Sincronização concluída: ${updated} capa(s) atualizada(s)!`);
-            }
-          }}
-        />
-      )}
-
-      {/* Background Floating Status Widget */}
-      <BackgroundSyncFloatingWidget
-        isRunning={coverSync.isRunning && !isSyncCoversModalOpen}
-        currentIndex={coverSync.currentIndex}
-        totalCount={coverSync.totalCount}
-        currentBookTitle={coverSync.currentBookTitle}
-        updatedCount={coverSync.updatedCount}
-        onOpenModal={() => setIsSyncCoversModalOpen(true)}
-        onCancel={coverSync.cancelSync}
-      />
-
-      {/* Debug and Maintenance Menu */}
-      {isDebugMenuOpen && (
-        <DebugMenu
-          isOpen={true}
-          onClose={() => setIsDebugMenuOpen(false)}
-          isMaintenanceMode={isMaintenanceMode}
-          onEnableMaintenance={enableMaintenanceBypass}
-          onDisableMaintenance={disableMaintenanceBypass}
-          onDbTargetChanged={() => setDbTargetTrigger(Date.now())}
-          onSyncProductionSpreadsheet={handleSyncProductionSpreadsheet}
-        />
-      )}
-
-      {/* Global Floating Batch Save Bar (reliably visible across all views whenever any book is edited) */}
-      <FloatingBatchSaveBar
-        books={books}
-        onBatchUpdateBooks={handleBatchUpdateBooks}
-        onUpdateBook={handleUpdateBook}
-      />
-
-    </div>
+    </BrowserRouter>
   );
 }

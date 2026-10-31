@@ -11,6 +11,7 @@ import {
   Upload,
   Sparkles,
   RotateCcw,
+  Loader2,
   Save,
   Undo2,
   AlertCircle
@@ -394,7 +395,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                     disabled={isFetchingCover}
                     className="text-[10px] text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800 bg-stone-50 dark:bg-stone-800/50 px-1.5 py-0.5 rounded-md flex items-center justify-center gap-1 transition-colors font-medium border border-stone-200 dark:border-stone-700/60 cursor-pointer"
                   >
-                    <RotateCcw className={`w-2.5 h-2.5 ${isFetchingCover ? 'animate-spin' : ''}`} />
+                    <Loader2 className={`w-2.5 h-2.5 ${isFetchingCover ? 'animate-spin text-amber-600' : ''}`} />
                     <span>{isFetchingCover ? '...' : 'Auto'}</span>
                   </button>
                 </div>
@@ -523,7 +524,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 onClick={handleSaveAllToDatabase}
                 className="px-3.5 py-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
               >
-                <Save className="w-3.5 h-3.5" />
+                {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 <span>{isSaving ? 'Salvando...' : 'Salvar no Banco'}</span>
               </button>
             </div>
@@ -551,7 +552,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
                 disabled={isSaving}
                 className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold shadow-xs cursor-pointer flex items-center gap-1"
               >
-                <Save className="w-3 h-3" />
+                {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
                 <span>{isSaving ? 'Salvando...' : 'Salvar no Banco'}</span>
               </button>
             </div>
@@ -1302,7 +1303,7 @@ export const BookDetailModal: React.FC<BookDetailModalProps> = ({
               onClick={handleSaveAllToDatabase}
               className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
             >
-              <Save className="w-4 h-4" />
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               <span>{isSaving ? 'Salvando no Banco...' : 'Salvar Alterações'}</span>
             </button>
           </div>

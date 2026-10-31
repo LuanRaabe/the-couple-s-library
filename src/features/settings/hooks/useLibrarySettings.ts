@@ -4,6 +4,7 @@ import { User as FirebaseUser } from 'firebase/auth';
 import { db, handleFirestoreError, withTimeout, sanitizeForFirestore, OperationType } from '@/core/firebase';
 import { LibrarySettings } from '../types';
 import { getSettingsCollection } from '@/core/config/env';
+import { withAuthRecovery } from '@/core/session/authSession';
 
 const DEFAULT_SETTINGS: LibrarySettings = {
   eleName: 'Luan',
@@ -60,7 +61,9 @@ export function useLibrarySettings(currentUser: FirebaseUser | null, onNotify?: 
         updatedBy: currentUser.uid,
         updatedAt: new Date().toISOString(),
       });
-      await withTimeout(setDoc(doc(db, settingsCollection, 'couple'), payload, { merge: true }), 9000);
+      await withAuthRecovery(async () => {
+        await withTimeout(setDoc(doc(db, settingsCollection, 'couple'), payload, { merge: true }), 9000);
+      });
       if (onNotify) onNotify('Configurações do casal salvas com sucesso no banco!');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, path);
